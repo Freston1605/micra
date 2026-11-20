@@ -124,7 +124,7 @@ def test_the_readme_names_the_repository_and_credits_upstream_once() -> None:
 def test_the_licence_keeps_the_original_notice_and_adds_the_modifications() -> None:
     text = _read("LICENSE")
 
-    assert "Copyright (c) 2026 Cristofher Ferrada" in text
+    assert "Copyright (c) 2025-2026 Cristofher Ferrada" in text
     assert re.search(
         r"^Copyright \(c\) 2026 Franco Ignacio Valdés Navarro.*modifications", text, re.MULTILINE
     )
