@@ -10,7 +10,7 @@ from polyx.core.i18n import _
 from polyx.core.report_metrics import _ORDER_CLASSES
 from polyx.gui import theme as T
 
-from . import registry
+from . import exportables, registry
 from .markup import _esc
 
 NUM = registry.NUM
@@ -19,10 +19,18 @@ _PALETTE = (T.DOC.ACCENT, T.DOC.VIO, T.DOC.WARN)
 
 
 def _fig_to_b64(fig) -> str:
+    """Embed a figure as PNG, and let the article export keep a copy.
+
+    The export needs the figure object before it is closed, because it renders
+    the vector formats (SVG, PDF) and the 300 dpi PNG from the same drawing.
+    Outside a report this call does nothing.
+    """
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=120)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    exportables.capture(fig, b64)
     plt.close(fig)
-    return base64.b64encode(buf.getvalue()).decode("ascii")
+    return b64
 
 
 # ────────────────────────────────────────────────────────────────────

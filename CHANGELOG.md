@@ -7,6 +7,19 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Article export (`polyx.gui.report.exportables`).** The report can now hand
+  back what a manuscript needs instead of a screenshot of it: every table and
+  figure is numbered in the document's language, and each one gets CSV + booktabs
+  LaTeX (tables) or SVG + PDF + 300 dpi PNG (figures) next to the HTML, with
+  download links inside the document and an `index.csv` tying each number to its
+  file. Figure data is recovered from the drawing itself (bars, lines, scatter,
+  heatmaps) so a histogram can be redrawn from its measurements rather than its
+  bar heights. Off by default: `generate_report(..., article_export=True)`, and
+  `export_folder=False` numbers the document without writing the folder. Ported
+  from upstream (`polyx/core/exportables.py`, MIT, Cristofher Ferrada), with
+  English identifiers, the gettext catalogs and one behavioural change: the
+  per-particle measure tables in the cards section are not numbered as report
+  tables.
 - **Headless, model-agnostic training pipeline (`polyx-pipeline`).** A new
   parallel path beside the GUI Trainer composes `conf/` with Hydra and trains
   YOLO v8/v11 detection and segmentation and torchvision Mask R-CNN through one

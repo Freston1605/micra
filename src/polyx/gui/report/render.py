@@ -16,6 +16,7 @@ from pathlib import Path
 from polyx.core.detection_run import RunResult, RunStatus
 from polyx.core.i18n import _, pgettext
 
+from . import exportables
 from .batch import LotForms, compute_batch_metrics, compute_lot_forms
 from .context import ReportContext
 from .registry import IDS_SECTIONS, SECTIONS, _document_html
@@ -84,8 +85,20 @@ def _generate_report_impl(
     max_records: int = 12,
     only_images: Collection[Path | str] | None = None,
     sections: Collection[str] | None = None,
+    article_export: bool = False,
+    export_folder: bool = True,
 ) -> Path:
     """Generates the HTML report from a canonical ``RunResult``.
+
+    ``export_folder`` is the half of the article export that writes files; with
+    it false the document is still numbered and self-contained, which is what an
+    HTML that travels on its own needs.
+
+    ``article_export`` additionally numbers every table and figure, appends
+    CSV/LaTeX/SVG links under each one and writes ``<report>_export/`` next to
+    the HTML. It renders each figure three more times (vector SVG and PDF plus
+    300 dpi PNG), so it is off by default: the number-once report the GUI shows
+    is unaffected.
 
     ``max_gallery`` limits how many images are embedded in the gallery.
     Images go into the HTML itself in base64, so without a cap a large
@@ -150,17 +163,31 @@ def _generate_report_impl(
     # which number belongs to each one. Only requested builders run, and an id
     # whose body is empty is dropped: the checkbox was ticked but there was
     # nothing to fill it with (errors without ground truth, for example).
-    alive = []
-    for sid, title in SECTIONS:
-        if sid not in requested:
-            continue
-        body = SECTION_BUILDERS[sid](ctx)
-        if body.strip():
-            alive.append((sid, _section_title(title), body))
+    # Figure capture is on only for the article export, and only while the
+    # builders run: the builders are what draw the figures, and the export reads
+    # them back out of the finished HTML by content hash.
+    if article_export:
+        exportables.start_recording()
+    try:
+        alive = []
+        for sid, title in SECTIONS:
+            if sid not in requested:
+                continue
+            body = SECTION_BUILDERS[sid](ctx)
+            if body.strip():
+                alive.append((sid, _section_title(title), body))
 
-    # Cover, table of contents, section numbering and footer live in
-    # _document_html: the impl remains the ordered list of calls that feeds it.
-    html = _document_html(alive, active, status_note)
+        # Cover, table of contents, section numbering and footer live in
+        # _document_html: the impl remains the ordered list of calls that feeds it.
+        html = _document_html(alive, active, status_note)
+        if article_export:
+            # Numbering rewrites the HTML, so it happens after assembly and
+            # before the file is written: the saved document is the numbered
+            # one. It runs inside the recording block because it is what reads
+            # the figures back out of the document, by content hash.
+            html = exportables.process(html, out_path, export=export_folder)
+    finally:
+        exportables.stop_recording()
     out_path.write_text(html, encoding="utf-8")
     return out_path
 
@@ -174,8 +201,14 @@ def generate_report(
     max_records: int = 12,
     only_images: Collection[Path | str] | None = None,
     sections: Collection[str] | None = None,
+    article_export: bool = False,
+    export_folder: bool = True,
 ) -> Path:
     """Generates the HTML report from a canonical ``RunResult``.
+
+    ``article_export`` is forwarded to the implementation: it numbers the
+    document's tables and figures and writes the export folder (see
+    :func:`polyx.gui.report.exportables.process`).
 
     A completed, aborted or failed run is reportable: a partial batch is real
     data, and the document carries a visible status banner so it is never
@@ -211,4 +244,6 @@ def generate_report(
             max_records=max_records,
             only_images=only_images,
             sections=sections,
+            article_export=article_export,
+            export_folder=export_folder,
         )

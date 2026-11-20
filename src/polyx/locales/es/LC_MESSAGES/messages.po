@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Poly-X\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-20 10:24-0500\n"
+"POT-Creation-Date: 2026-11-20 19:00-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -452,7 +452,7 @@ msgid "Models:"
 msgstr "Modelos:"
 
 #: src/polyx/core/report_simple.py:102 src/polyx/gui/detector/pages/compare.py:40
-#: src/polyx/gui/detector/pages/results.py:77 src/polyx/gui/report/figures.py:213
+#: src/polyx/gui/detector/pages/results.py:77 src/polyx/gui/report/figures.py:221
 #: src/polyx/gui/report/sections.py:347
 msgid "Detections"
 msgstr "Detecciones"
@@ -2847,12 +2847,12 @@ msgstr "Se canceló a mitad: vuelve a pulsar para terminar."
 msgid "%(model)s — conf %(threshold)s: F1 %(f1)s (%(criterion)s; P %(precision)s / R %(recall)s)."
 msgstr "%(model)s — conf %(threshold)s: F1 %(f1)s (%(criterion)s; P %(precision)s / R %(recall)s)."
 
-#: src/polyx/gui/detector/pages/results.py:575 src/polyx/gui/report/figures.py:236
+#: src/polyx/gui/detector/pages/results.py:575 src/polyx/gui/report/figures.py:244
 msgid "Equivalent diameter (μm)"
 msgstr "Diámetro equivalente (μm)"
 
-#: src/polyx/gui/detector/pages/results.py:576 src/polyx/gui/report/figures.py:225
-#: src/polyx/gui/report/figures.py:237
+#: src/polyx/gui/detector/pages/results.py:576 src/polyx/gui/report/figures.py:233
+#: src/polyx/gui/report/figures.py:245
 msgid "Frequency"
 msgstr "Frecuencia"
 
@@ -3159,97 +3159,126 @@ msgstr[1] "● Pre-anotadas %(count)d cajas"
 msgid "Pre-annotation error"
 msgstr "Error en pre-anotación"
 
-#: src/polyx/gui/report/figures.py:59
+#: src/polyx/gui/report/exportables.py:548 src/polyx/gui/report/exportables.py:674
+msgid "Table"
+msgstr "Tabla"
+
+#: src/polyx/gui/report/exportables.py:548 src/polyx/gui/report/exportables.py:674
+msgid "Figure"
+msgstr "Figura"
+
+#: src/polyx/gui/report/exportables.py:713
+msgid "Kind"
+msgstr "Tipo"
+
+#: src/polyx/gui/report/exportables.py:713
+msgid "Number"
+msgstr "Número"
+
+#: src/polyx/gui/report/exportables.py:713
+msgid "Files"
+msgstr "Archivos"
+
+#: src/polyx/gui/report/exportables.py:713
+msgid "Caption"
+msgstr "Leyenda"
+
+#: src/polyx/gui/report/exportables.py:591 src/polyx/gui/report/exportables.py:635
+#: src/polyx/gui/trainer/pages/export.py:119 src/polyx/gui/trainer/window.py:34
+msgid "Export"
+msgstr "Exportar"
+
+#: src/polyx/gui/report/figures.py:67
 msgid "Confidence threshold"
 msgstr "Umbral de confianza"
 
-#: src/polyx/gui/report/figures.py:60
+#: src/polyx/gui/report/figures.py:68
 msgid "F1 (with class)"
 msgstr "F1 (con clase)"
 
-#: src/polyx/gui/report/figures.py:79 src/polyx/gui/trainer/pages/compare.py:89
+#: src/polyx/gui/report/figures.py:87 src/polyx/gui/trainer/pages/compare.py:89
 msgid "Precision"
 msgstr "Precisión"
 
-#: src/polyx/gui/report/figures.py:79 src/polyx/gui/trainer/pages/compare.py:90
+#: src/polyx/gui/report/figures.py:87 src/polyx/gui/trainer/pages/compare.py:90
 msgid "Recall"
 msgstr "Recall"
 
-#: src/polyx/gui/report/figures.py:97
+#: src/polyx/gui/report/figures.py:105
 msgid "Value"
 msgstr "Valor"
 
-#: src/polyx/gui/report/figures.py:196
+#: src/polyx/gui/report/figures.py:204
 msgid "F1 per class"
 msgstr "F1 por clase"
 
-#: src/polyx/gui/report/figures.py:214
+#: src/polyx/gui/report/figures.py:222
 msgid "Detections per class"
 msgstr "Distribución por clase"
 
-#: src/polyx/gui/report/figures.py:224
+#: src/polyx/gui/report/figures.py:232
 msgid "Confidence"
 msgstr "Confianza"
 
-#: src/polyx/gui/report/figures.py:226
+#: src/polyx/gui/report/figures.py:234
 msgid "Confidence histogram"
 msgstr "Histograma de confianza"
 
-#: src/polyx/gui/report/figures.py:238 src/polyx/gui/report/sections.py:1277
+#: src/polyx/gui/report/figures.py:246 src/polyx/gui/report/sections.py:1277
 msgid "Size distribution"
 msgstr "Distribución de tallas"
 
-#: src/polyx/gui/report/figures.py:281
+#: src/polyx/gui/report/figures.py:289
 msgid "size (µm, longest dimension following the curve)"
 msgstr "talla (µm, dimensión mayor siguiendo la curva)"
 
-#: src/polyx/gui/report/figures.py:282
+#: src/polyx/gui/report/figures.py:290
 msgid "particles"
 msgstr "partículas"
 
-#: src/polyx/gui/report/figures.py:339
+#: src/polyx/gui/report/figures.py:347
 msgid "size (µm, log scale)"
 msgstr "talla (µm, escala log)"
 
-#: src/polyx/gui/report/figures.py:390
+#: src/polyx/gui/report/figures.py:398
 msgid "particles per interval"
 msgstr "partículas por tramo"
 
-#: src/polyx/gui/report/figures.py:391
+#: src/polyx/gui/report/figures.py:399
 msgid "median size (µm)  ·  band = interquartile range"
 msgstr "talla mediana (µm)  ·  banda = rango intercuartílico"
 
-#: src/polyx/gui/report/figures.py:392
+#: src/polyx/gui/report/figures.py:400
 msgid "interval (higher = deeper)"
 msgstr "tramo (mayor = más profundo)"
 
-#: src/polyx/gui/report/figures.py:520
+#: src/polyx/gui/report/figures.py:528
 msgid "Prediction"
 msgstr "Predicción"
 
-#: src/polyx/gui/report/figures.py:521
+#: src/polyx/gui/report/figures.py:529
 msgid "Ground Truth"
 msgstr "Ground Truth"
 
-#: src/polyx/gui/report/figures.py:522 src/polyx/gui/report/sections.py:430
+#: src/polyx/gui/report/figures.py:530 src/polyx/gui/report/sections.py:430
 #: src/polyx/gui/trainer/pages/summary.py:126
 msgid "Confusion matrix"
 msgstr "Matriz de confusión"
 
-#: src/polyx/gui/report/figures.py:138
+#: src/polyx/gui/report/figures.py:146
 msgid "exact agreement"
 msgstr "acuerdo exacto"
 
-#: src/polyx/gui/report/figures.py:156 src/polyx/gui/report/figures.py:157
+#: src/polyx/gui/report/figures.py:164 src/polyx/gui/report/figures.py:165
 #, python-format
 msgid "Detections · %(model)s"
 msgstr "Detecciones · %(model)s"
 
-#: src/polyx/gui/report/figures.py:501
+#: src/polyx/gui/report/figures.py:509
 msgid "How the scale is obtained, on a real dish"
 msgstr "Cómo se obtiene la escala, sobre una placa real"
 
-#: src/polyx/gui/report/figures.py:502
+#: src/polyx/gui/report/figures.py:510
 msgid ""
 "In green, the circle the fit found for the outer edge of the rim; in yellow, its diameter. That "
 "diameter is the known quantity"
@@ -3257,11 +3286,11 @@ msgstr ""
 "En verde, la circunferencia que el ajuste encontró para el borde externo del anillo; en "
 "amarillo, su diámetro. Ese diámetro es la magnitud conocida"
 
-#: src/polyx/gui/report/figures.py:503
+#: src/polyx/gui/report/figures.py:511
 msgid " and everything else follows from it."
 msgstr " y de ahí sale todo lo demás."
 
-#: src/polyx/gui/report/figures.py:509
+#: src/polyx/gui/report/figures.py:517
 msgid ""
 "It is worth checking that the green circle follows the rim edge and not something else —the "
 "dish's shadow, a reflection, or the inner edge of the filter—. If it landed wrong, "
@@ -3273,24 +3302,24 @@ msgstr ""
 "tallas de esa foto saldrían escaladas por el mismo factor equivocado, y ninguna otra cifra del "
 "informe lo delataría."
 
-#: src/polyx/gui/report/figures.py:513
+#: src/polyx/gui/report/figures.py:521
 msgid "background"
 msgstr "fondo"
 
-#: src/polyx/gui/report/figures.py:83
+#: src/polyx/gui/report/figures.py:91
 msgid "Localisation"
 msgstr "Localización"
 
-#: src/polyx/gui/report/figures.py:83
+#: src/polyx/gui/report/figures.py:91
 msgid "With class"
 msgstr "Con clase"
 
-#: src/polyx/gui/report/figures.py:342
+#: src/polyx/gui/report/figures.py:350
 #, python-format
 msgid " (the %(n)s with the most particles)"
 msgstr " (las %(n)s con más partículas)"
 
-#: src/polyx/gui/report/figures.py:508
+#: src/polyx/gui/report/figures.py:516
 #, python-format
 msgid "%(n)s edge points"
 msgstr "%(n)s puntos de borde"
@@ -3460,12 +3489,12 @@ msgstr "Generado por MICRA"
 msgid "Microplastics detection suite by Nile Red fluorescence (254 nm) and AI (YOLO v8/v11)."
 msgstr "Suite de detección de microplásticos por fluorescencia Nile Red (254 nm) e IA (YOLO v8/v11)."
 
-#: src/polyx/gui/report/render.py:74
+#: src/polyx/gui/report/render.py:75
 msgctxt "report section"
 msgid "Summary"
 msgstr "Resumen"
 
-#: src/polyx/gui/report/render.py:194
+#: src/polyx/gui/report/render.py:227
 #, python-format
 msgid "report requires a finished run, not %(status)r"
 msgstr "el informe exige una ejecución terminada, no %(status)r"
@@ -4830,10 +4859,6 @@ msgstr "Entrenar"
 #: src/polyx/gui/trainer/pages/evaluate.py:62 src/polyx/gui/trainer/window.py:32
 msgid "Evaluate"
 msgstr "Evaluar"
-
-#: src/polyx/gui/trainer/pages/export.py:119 src/polyx/gui/trainer/window.py:34
-msgid "Export"
-msgstr "Exportar"
 
 #: src/polyx/gui/trainer/window.py:101
 msgid "● Training…"
