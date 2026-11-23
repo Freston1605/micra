@@ -95,11 +95,19 @@ pycocotools licence; omitting it fails the build with
 The CUDA runtime is part of that replacement, not a separate pin. `uv.lock`
 pins the tree the **default-index** torch asks for (CUDA 13), while the cu126
 wheels declare CUDA 12.6 exactly; carrying both would be a resolution
-conflict. The builder therefore drops every `cuda-*`/`nvidia-*` pin, downloads
-the cu126 wheels with dependency resolution against the exported lockfile as
-constraints, and lets their own metadata select the runtime. Those wheels land
-in the same directory and are covered by the same `SHA256SUMS`; the offline
-install resolves them from there.
+conflict. The builder therefore drops the CUDA tree *by name* — a new
+`nvidia-*` package that is not part of `torch`'s closure keeps its pin, and
+`tests/test_hpc_environment.py` proves that list equals the closure in
+`uv.lock` — downloads the cu126 wheels with dependency resolution against the
+exported lockfile as constraints, and lets their own metadata select the
+runtime. Those wheels land in the same directory and are covered by the same
+`SHA256SUMS`; the offline install resolves them from there.
+
+Before the manifest is written, `verify_cuda_runtime` reads the downloaded
+file names and fails the build if the framework is not the `+cu126` build or
+if any CUDA 13 wheel survived the resolution. That check is what turns an
+index-precedence mistake into a failed build instead of a node that dies at
+kernel launch.
 
 ```sh
 python tools/hpc/build_wheelhouse.py --wheelhouse wheelhouse

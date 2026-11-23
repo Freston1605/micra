@@ -51,9 +51,36 @@ CUDA_INDEX = "https://download.pytorch.org/whl/cu126"
 PYPI_INDEX = "https://pypi.org/simple"
 CUDA_PACKAGES = ("torch==2.13.0+cu126", "torchvision==0.28.0+cu126")
 REPLACED_PACKAGES = frozenset({"torch", "torchvision"})
-#: Packages that belong to the CUDA runtime tree the framework wheel selects.
-#: The lockfile's versions of them describe the default-index build, not cu126.
-CUDA_RUNTIME_PREFIXES = ("cuda-", "nvidia-")
+#: The CUDA runtime tree the framework wheel selects. It is listed by name, not
+#: by prefix: a future `nvidia-*` or `cuda-*` package that is *not* part of this
+#: tree must keep its lockfile pin, and a prefix filter would silently drop it.
+#: tests/test_hpc_environment.py proves this set equals the closure of
+#: torch/torchvision in uv.lock, so a framework bump that changes the tree
+#: fails there instead of producing a wheelhouse with a missing pin.
+CUDA_RUNTIME_PACKAGES = frozenset(
+    {
+        "cuda-bindings",
+        "cuda-pathfinder",
+        "cuda-toolkit",
+        "nvidia-cublas",
+        "nvidia-cuda-cupti",
+        "nvidia-cuda-nvrtc",
+        "nvidia-cuda-runtime",
+        "nvidia-cudnn-cu13",
+        "nvidia-cufft",
+        "nvidia-cufile",
+        "nvidia-curand",
+        "nvidia-cusolver",
+        "nvidia-cusparse",
+        "nvidia-cusparselt-cu13",
+        "nvidia-nccl-cu13",
+        "nvidia-nvjitlink",
+        "nvidia-nvshmem-cu13",
+        "nvidia-nvtx",
+    }
+)
+#: A framework pin is `name==version+tag`, and the tag must be the index's own.
+_CUDA_PIN = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>\d[^+]*)\+(?P<tag>[A-Za-z0-9.]+)$")
 _NAME = re.compile(r"^[A-Za-z0-9_.-]+")
 DEFAULT_WHEELHOUSE = Path("dist") / "wheelhouse"
 
@@ -77,6 +104,29 @@ class Plan:
         return self.wheelhouse / "SHA256SUMS"
 
 
+def cuda_tag(index: str = CUDA_INDEX) -> str:
+    """The local version tag an index serves, e.g. ``cu126`` for ``/whl/cu126``."""
+    return index.rstrip("/").rsplit("/", 1)[-1]
+
+
+def check_framework_pins(pins: tuple[str, ...], index: str = CUDA_INDEX) -> None:
+    """Refuse a framework pin that is not an exact build of the given index.
+
+    A floating requirement, or a ``+cu126`` pin aimed at some other index, is
+    only discovered after a multi-gigabyte download has failed, or worse, after
+    the wrong build reached the wheelhouse.
+    """
+    expected = cuda_tag(index)
+    for pin in pins:
+        match = _CUDA_PIN.match(pin)
+        if match is None:
+            raise ValueError(f"framework pin {pin!r} is not an exact `name==version+tag`")
+        if match["tag"] != expected:
+            raise ValueError(
+                f"framework pin {pin!r} does not belong to {index} (expected +{expected})"
+            )
+
+
 def split_requirements(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Keep the locked pins, minus the framework and its CUDA runtime tree."""
     default: list[str] = []
@@ -86,7 +136,7 @@ def split_requirements(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
             continue
         match = _NAME.match(line)
         name = match.group(0).lower() if match else ""
-        if name in REPLACED_PACKAGES or name.startswith(CUDA_RUNTIME_PREFIXES):
+        if name in REPLACED_PACKAGES or name in CUDA_RUNTIME_PACKAGES:
             continue
         default.append(line)
     return tuple(default), CUDA_PACKAGES
@@ -95,6 +145,7 @@ def split_requirements(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
 def make_plan(requirements_text: str, wheelhouse: Path) -> Plan:
     """Turn an exported requirements list into ordered build steps."""
     default, cuda = split_requirements(requirements_text)
+    check_framework_pins(cuda)
     wheelhouse = Path(wheelhouse)
     exported = wheelhouse / "lock-requirements.txt"
     pip = (
@@ -114,6 +165,12 @@ def make_plan(requirements_text: str, wheelhouse: Path) -> Plan:
     # resolve, because the tree it needs is the one its own wheel declares; the
     # exported lockfile is passed as the constraint file, so every other pin
     # stays where the lockfile put it.
+    #
+    # Both indexes are named because the framework needs one and its
+    # dependencies need the other, but the pin picks the source: `+cu126` is a
+    # local version tag no default-index wheel carries, so PyPI cannot satisfy
+    # `torch==2.13.0+cu126`. `verify_cuda_runtime` then proves the bytes match
+    # that pin before the manifest is written.
     index_args = ("--index-url", CUDA_INDEX)
     steps = (
         (
@@ -140,6 +197,11 @@ def make_plan(requirements_text: str, wheelhouse: Path) -> Plan:
             str(exported),
             *cuda,
         ),
+        # The resolver is the only thing standing between a pin and the tree it
+        # drags in, so the download is checked by name before anything is
+        # published: a CUDA 13 runtime, a plain framework wheel or a missing one
+        # fails here instead of on the node.
+        ("verify", str(wheelhouse), "framework is +cu126 and the runtime is CUDA 12.6"),
         # The project's own wheel is built here, where the build backend and the
         # network are available, and ships in the wheelhouse. A compute node
         # then installs it with --no-index and never needs hatchling, Babel or
@@ -156,6 +218,49 @@ def make_plan(requirements_text: str, wheelhouse: Path) -> Plan:
         cuda_index_args=index_args,
         steps=steps,
     )
+
+
+def _wheel_fields(filename: str) -> tuple[str, str]:
+    """The normalized name and the version of a wheel file name."""
+    name, _, rest = filename.partition("-")
+    version, _, _ = rest.partition("-")
+    return name.replace("_", "-").lower(), version
+
+
+#: A CUDA 13 flavour, as it appears in a wheel name (``..._cu13``).
+_CUDA13 = re.compile(r"(?:^|[-_])cu13(?:[-_]|$)")
+
+
+def verify_cuda_runtime(wheelhouse: Path) -> tuple[str, ...]:
+    """Problems in a downloaded wheelhouse, empty when it is the cu126 stack.
+
+    The resolver is the only thing between a pin and the tree it drags in, and
+    its two failure modes are silent until a job dies on the node: the
+    framework came from the default index, or a CUDA 13 runtime wheel won the
+    resolution. Both are visible in file names, so this check needs no import
+    of the wheels and no network.
+    """
+    expected = {pin.partition("==")[0]: pin.partition("==")[2] for pin in CUDA_PACKAGES}
+    problems: list[str] = []
+    downloaded = set()
+    cuda_runtime_wheels = 0
+    for wheel in sorted(wheelhouse.glob("*.whl")):
+        name, version = _wheel_fields(wheel.name)
+        if name in expected:
+            downloaded.add(name)
+            if version != expected[name]:
+                problems.append(f"{wheel.name}: expected {name}=={expected[name]}")
+            continue
+        if not name.startswith(("cuda-", "nvidia-")):
+            continue
+        if _CUDA13.search(name) or version.partition(".")[0] == "13":
+            problems.append(f"{wheel.name}: CUDA 13 build, not the cu126 runtime")
+        else:
+            cuda_runtime_wheels += 1
+    problems.extend(f"{name}: not downloaded" for name in sorted(set(expected) - downloaded))
+    if not cuda_runtime_wheels:
+        problems.append("no CUDA 12 runtime wheel was downloaded")
+    return tuple(problems)
 
 
 def _export_lockfile() -> str:
@@ -221,6 +326,33 @@ def _run(step: tuple[str, ...]) -> int:
     return subprocess.run(step, cwd=ROOT, check=False).returncode
 
 
+def _write_pins(path: Path, pins: tuple[str, ...]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(pins) + "\n", encoding="utf-8")
+
+
+def _apply_step(plan: Plan, step: tuple[str, ...]) -> int:
+    """Run one plan step; a non-zero result stops the build."""
+    kind = step[0]
+    if kind == "write":
+        target = Path(step[1])
+        if target == plan.wheelhouse / "lock-requirements.txt":
+            _write_pins(target, plan.default_requirements)
+        elif target == plan.requirements_file:
+            _write_index(plan)
+        elif target == plan.checksum_file:
+            _write_checksums(plan)
+        print("+ " + " ".join(step), flush=True)
+        return 0
+    if kind == "verify":
+        problems = verify_cuda_runtime(plan.wheelhouse)
+        print("+ " + " ".join(step), flush=True)
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 1 if problems else 0
+    return _run(step)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build an offline wheelhouse from uv.lock")
     parser.add_argument("--wheelhouse", type=Path, default=DEFAULT_WHEELHOUSE)
@@ -246,20 +378,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     for step in plan.steps:
-        if step[0] == "write":
-            target = Path(step[1])
-            if target == plan.wheelhouse / "lock-requirements.txt":
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text("\n".join(plan.default_requirements) + "\n", encoding="utf-8")
-                print("+ " + " ".join(step), flush=True)
-                continue
-            if target == plan.requirements_file:
-                _write_index(plan)
-            elif target == plan.checksum_file:
-                _write_checksums(plan)
-            print("+ " + " ".join(step), flush=True)
-            continue
-        code = _run(step)
+        code = _apply_step(plan, step)
         if code:
             return code
     return 0

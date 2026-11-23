@@ -45,8 +45,11 @@ path) may be committed.
    index, same CUDA 12.6 contract, same `sm_70` requirement — but the runtime
    below the framework moved with it: the lockfile pins the default-index
    tree (CUDA 13), while the cu126 wheels declare CUDA 12.6, so the builder
-   drops every `cuda-*`/`nvidia-*` pin and resolves that tree from the cu126
-   wheel's own metadata, with the exported lockfile passed as constraints.
+   drops that tree by name (the set is checked against the lockfile) and
+   resolves it from the cu126 wheel's own metadata, with the exported
+   lockfile as constraints. The downloaded files are verified as `+cu126`
+   before the manifest is written, so a wrong tree fails the build rather
+   than a GPU allocation.
 3. `tools/hpc/build_wheelhouse.py` exports the lockfile, downloads every other
    wheel as pinned there, downloads the CUDA wheels with their runtime
    dependencies, builds the project's own wheel, writes an offline

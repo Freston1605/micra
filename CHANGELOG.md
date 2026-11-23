@@ -47,10 +47,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **PyTorch moves to 2.13.0 and torchvision to 0.28.0 (#203).** The pair is
   raised in `pyproject.toml` and `uv.lock`, closing the five advisories
   Dependabot reports against 2.7.1/0.22.1, the last of which clears at 2.13.0.
-  The cluster image keeps its CUDA 12.6 contract: the wheelhouse builder now
-  drops the lockfile's `cuda-*`/`nvidia-*` pins (the default-index tree is
-  CUDA 13) and resolves the runtime from the cu126 wheels' own metadata, with
-  the exported lockfile as constraints. The upgrade does not make an untrusted
+  The cluster image keeps its CUDA 12.6 contract: the wheelhouse builder drops
+  the lockfile's pinned CUDA tree by name — checked against `torch`'s closure
+  in `uv.lock`, so a new `nvidia-*` package keeps its pin — and resolves the
+  runtime from the cu126 wheels' own metadata, with the exported lockfile as
+  constraints. The downloaded tree is then verified as `+cu126`/CUDA 12.6
+  before the manifest is written. The upgrade does not make an untrusted
   checkpoint safe to load; the digest rule stands.
 - **Pillow moves to 13.0.0 (#203).** The security pin is raised in
   `pyproject.toml` and `uv.lock`. The desktop ZIP
