@@ -22,10 +22,15 @@ The environment therefore pins:
 
 - base image by manifest digest, not by tag;
 - `uv` version `0.13.7`, the same version that writes `uv.lock`;
-- `torch==2.7.1+cu126` and `torchvision==0.22.1+cu126` from
+- `torch==2.13.0+cu126` and `torchvision==0.28.0+cu126` from
   `https://download.pytorch.org/whl/cu126`, which report `sm_70` in their
   compiled architecture list and match driver 560 / CUDA 12.6;
 - every other package from `uv.lock`, with no floating versions.
+
+2.13.0 is also the floor set by the security advisories against the previous
+pair: the last one closes with 2.13.0. The upgrade does not retire the rule in
+the next section — a checkpoint is a pickle, and only a verified digest makes
+one trustworthy.
 
 `torch` and `torchvision` are transitive dependencies of Ultralytics and are
 constrained, not declared directly, in `pyproject.toml` (ticket #194 owns
@@ -86,6 +91,23 @@ other dependency. The
 wheel build also needs `NOTICE`, which `pyproject.toml` force-includes for the
 pycocotools licence; omitting it fails the build with
 `Forced include not found`.
+
+The CUDA runtime is part of that replacement, not a separate pin. `uv.lock`
+pins the tree the **default-index** torch asks for (CUDA 13), while the cu126
+wheels declare CUDA 12.6 exactly; carrying both would be a resolution
+conflict. The builder therefore drops the CUDA tree *by name* — a new
+`nvidia-*` package that is not part of `torch`'s closure keeps its pin, and
+`tests/test_hpc_environment.py` proves that list equals the closure in
+`uv.lock` — downloads the cu126 wheels with dependency resolution against the
+exported lockfile as constraints, and lets their own metadata select the
+runtime. Those wheels land in the same directory and are covered by the same
+`SHA256SUMS`; the offline install resolves them from there.
+
+Before the manifest is written, `verify_cuda_runtime` reads the downloaded
+file names and fails the build if the framework is not the `+cu126` build or
+if any CUDA 13 wheel survived the resolution. That check is what turns an
+index-precedence mistake into a failed build instead of a node that dies at
+kernel launch.
 
 ```sh
 python tools/hpc/build_wheelhouse.py --wheelhouse wheelhouse

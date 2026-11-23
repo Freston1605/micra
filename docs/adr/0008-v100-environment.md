@@ -1,6 +1,7 @@
 # ADR-0008: V100/cu126 offline environment
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-11-23 by #203: torch/torchvision pins and the
+  CUDA runtime they select)
 - **Date:** 2026-11-18
 - **Landed in:** #195
 
@@ -33,10 +34,22 @@ path) may be committed.
    (`container/hpc.def`) start from the same Python 3.11 slim base pinned by an
    amd64 manifest digest, plus a pinned `uv` version. The runtime stage
    installs exclusively from a downloaded wheelhouse with `--no-index`.
-2. `torch==2.7.1+cu126` and `torchvision==0.22.1+cu126` come explicitly from
+2. `torch==2.13.0+cu126` and `torchvision==0.28.0+cu126` come explicitly from
    `https://download.pytorch.org/whl/cu126`. They replace the default-index
    pins that `uv.lock` carries for those transitive dependencies. The default
    public wheel is not used.
+
+   *Amended 2026-11-23 (#203):* the pair moved from 2.7.1/0.22.1 to
+   2.13.0/0.28.0 to close every advisory Dependabot reports against it, the
+   last of which clears at 2.13.0. The decision itself is unchanged — same
+   index, same CUDA 12.6 contract, same `sm_70` requirement — but the runtime
+   below the framework moved with it: the lockfile pins the default-index
+   tree (CUDA 13), while the cu126 wheels declare CUDA 12.6, so the builder
+   drops that tree by name (the set is checked against the lockfile) and
+   resolves it from the cu126 wheel's own metadata, with the exported
+   lockfile as constraints. The downloaded files are verified as `+cu126`
+   before the manifest is written, so a wrong tree fails the build rather
+   than a GPU allocation.
 3. `tools/hpc/build_wheelhouse.py` exports the lockfile, downloads every other
    wheel as pinned there, downloads the CUDA wheels with their runtime
    dependencies, builds the project's own wheel, writes an offline

@@ -10,6 +10,9 @@ smoke check is ticket #199 on OCEANO, not this suite.
 from __future__ import annotations
 
 import contextlib
+import subprocess
+import tomllib
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -289,19 +292,59 @@ def test_wheelhouse_plan_uses_the_cuda_index_and_never_installs() -> None:
     requirements = "\n".join(
         [
             "numpy==1.26.4",
-            "torch==2.7.1",
-            "torchvision==0.22.1",
+            "torch==2.13.0",
+            "torchvision==0.28.0",
             "ultralytics==8.3.40",
         ]
     )
     plan = build_wheelhouse.make_plan(requirements, Path("/wheelhouse"))
 
     assert plan.default_requirements == ("numpy==1.26.4", "ultralytics==8.3.40")
-    assert plan.cuda_requirements == ("torch==2.7.1+cu126", "torchvision==0.22.1+cu126")
+    assert plan.cuda_requirements == ("torch==2.13.0+cu126", "torchvision==0.28.0+cu126")
     assert build_wheelhouse.CUDA_INDEX in plan.cuda_index_args
     # The builder downloads and builds; installing belongs to the image, so the
     # plan never writes into whichever environment happened to invoke it.
     assert not any(step[:3] == ("uv", "pip", "install") for step in plan.steps)
+
+
+def test_the_default_pins_drop_the_cuda_runtime_tree() -> None:
+    """The lockfile pins CUDA 13; the cu126 wheels declare CUDA 12.6.
+
+    Both in one requirement list is a resolution conflict, so the tree leaves
+    the default pins and the framework wheel's metadata selects it instead.
+    """
+    from tools.hpc import build_wheelhouse
+
+    exported = "\n".join(
+        [
+            "numpy==1.26.4",
+            "torch==2.13.0 ; sys_platform == 'linux'",
+            "torchvision==0.28.0 ; sys_platform == 'linux'",
+            "cuda-toolkit==13.0.3.0 ; sys_platform == 'linux'",
+            "cuda-bindings==13.5.0 ; sys_platform == 'linux'",
+            "nvidia-cudnn-cu13==9.20.0.48 ; sys_platform == 'linux'",
+            "nvidia-cublas==13.1.1.3 ; sys_platform == 'linux'",
+            "triton==3.7.1 ; sys_platform == 'linux'",
+        ]
+    )
+    default, cuda = build_wheelhouse.split_requirements(exported)
+
+    assert default == ("numpy==1.26.4", "triton==3.7.1 ; sys_platform == 'linux'")
+    assert cuda == build_wheelhouse.CUDA_PACKAGES
+
+
+def test_the_cuda_download_resolves_dependencies_against_the_lockfile() -> None:
+    """Torch's CUDA tree comes from its own metadata, pinned by constraints."""
+    from tools.hpc import build_wheelhouse
+
+    plan = build_wheelhouse.make_plan("numpy==1.26.4\n", Path("/wheelhouse"))
+    cuda_step = next(step for step in plan.steps if set(plan.cuda_requirements) <= set(step))
+
+    # Without resolution the wheelhouse would carry torch but not the runtime
+    # below it, and the offline install would fail on a node with no index.
+    assert "--no-deps" not in cuda_step
+    assert cuda_step[cuda_step.index("-c") + 1] == str(plan.wheelhouse / "lock-requirements.txt")
+    assert build_wheelhouse.PYPI_INDEX in cuda_step
 
 
 def test_wheelhouse_plan_filters_torch_before_the_default_index_download(
@@ -309,7 +352,7 @@ def test_wheelhouse_plan_filters_torch_before_the_default_index_download(
 ) -> None:
     from tools.hpc import build_wheelhouse
 
-    plan = build_wheelhouse.make_plan("torch==2.7.1\nnumpy==1.26.4\n", tmp_path / "wheelhouse")
+    plan = build_wheelhouse.make_plan("torch==2.13.0\nnumpy==1.26.4\n", tmp_path / "wheelhouse")
     writes = [step[1] for step in plan.steps if step[0] == "write"]
     assert writes[0] == str(plan.wheelhouse / "lock-requirements.txt")
 
@@ -336,6 +379,224 @@ def test_dry_run_prints_the_offline_install_command(
     assert "wheelhouse" in output
 
 
+def test_the_exclusion_set_is_the_framework_closure_in_the_lockfile() -> None:
+    """The dropped pins are exactly what torch and torchvision drag in.
+
+    A prefix filter would also drop a future unrelated ``nvidia-*`` package;
+    a stale list would keep a CUDA 13 pin the cu126 wheels contradict. Both are
+    this equality: every CUDA-tree package in the lockfile's framework closure
+    is dropped, and nothing outside that closure is.
+    """
+    from tools.hpc import build_wheelhouse
+
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    packages = {entry["name"]: entry for entry in lock["package"]}
+
+    def dependencies(name: str) -> list[str]:
+        entry = packages[name]
+        edges = [dependency["name"] for dependency in entry.get("dependencies", [])]
+        for extra in entry.get("optional-dependencies", {}).values():
+            edges += [dependency["name"] for dependency in extra]
+        return edges
+
+    seen: set[str] = set()
+    pending = ["torch", "torchvision"]
+    while pending:
+        name = pending.pop()
+        if name in seen or name not in packages:
+            continue
+        seen.add(name)
+        pending += dependencies(name)
+
+    in_closure = {name for name in seen if name.startswith(("cuda-", "nvidia-"))}
+
+    assert in_closure == set(build_wheelhouse.CUDA_RUNTIME_PACKAGES), (
+        "the exclusion set no longer matches torch's runtime closure in uv.lock"
+    )
+
+
+def test_a_new_cuda_package_keeps_its_lockfile_pin() -> None:
+    """Only the named tree is dropped; a prefix is not a policy."""
+    from tools.hpc import build_wheelhouse
+
+    exported = "\n".join(
+        [
+            "cuda-toolkit==13.0.3.0",
+            "nvidia-cublas==13.1.1.3",
+            "nvidia-something-new==1.0.0",
+            "cuda-profiler-sample==2.0.0",
+            "numpy==1.26.4",
+        ]
+    )
+    default, _ = build_wheelhouse.split_requirements(exported)
+
+    assert default == (
+        "nvidia-something-new==1.0.0",
+        "cuda-profiler-sample==2.0.0",
+        "numpy==1.26.4",
+    )
+
+
+def test_framework_pins_must_be_exact_builds_of_the_index() -> None:
+    """A pin and an index that disagree fail the plan, not a 4 GB download."""
+    from tools.hpc import build_wheelhouse
+
+    build_wheelhouse.check_framework_pins(build_wheelhouse.CUDA_PACKAGES)
+
+    with pytest.raises(ValueError, match="not an exact"):
+        build_wheelhouse.check_framework_pins(("torch==2.13.0",))
+    with pytest.raises(ValueError, match=r"does not belong to .*cu126"):
+        build_wheelhouse.check_framework_pins(("torch==2.13.0+cu128",))
+    # The index and the tag travel together: pointing the builder at another
+    # CUDA build without changing the pins is refused before the download.
+    with pytest.raises(ValueError, match=r"does not belong to .*cu128"):
+        build_wheelhouse.check_framework_pins(
+            build_wheelhouse.CUDA_PACKAGES,
+            index="https://download.pytorch.org/whl/cu128",
+        )
+
+
+def test_the_plan_verifies_the_tree_before_it_writes_the_manifest() -> None:
+    """A wrong tree must fail before the checksums bless it."""
+    from tools.hpc import build_wheelhouse
+
+    plan = build_wheelhouse.make_plan("numpy==1.26.4\n", Path("/wheelhouse"))
+    kinds = [step[0] for step in plan.steps]
+
+    verify_at = kinds.index("verify")
+    cuda_at = next(
+        index for index, step in enumerate(plan.steps) if set(plan.cuda_requirements) <= set(step)
+    )
+    checksum_at = next(
+        index for index, step in enumerate(plan.steps) if step[1].endswith("SHA256SUMS")
+    )
+    assert cuda_at < verify_at < checksum_at
+
+
+def test_verify_cuda_runtime_accepts_the_cu126_tree(tmp_path: Path) -> None:
+    from tools.hpc import build_wheelhouse
+
+    for name in (
+        "torch-2.13.0+cu126-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "torchvision-0.28.0+cu126-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "nvidia_cublas_cu12-12.6.4.1-py3-none-manylinux2014_x86_64.whl",
+        "nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl",
+        "cuda_toolkit-12.6.3-py2.py3-none-any.whl",
+        "cuda_bindings-12.9.11-cp311-cp311-manylinux_2_24_x86_64.whl",
+        "cuda_pathfinder-1.9.1-py3-none-any.whl",
+    ):
+        (tmp_path / name).touch()
+
+    assert build_wheelhouse.verify_cuda_runtime(tmp_path) == ()
+
+
+def test_verify_cuda_runtime_rejects_a_cuda13_tree_or_a_plain_framework(
+    tmp_path: Path,
+) -> None:
+    from tools.hpc import build_wheelhouse
+
+    for name in (
+        "torch-2.13.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "torchvision-0.28.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "cuda_toolkit-13.0.3.0-py2.py3-none-any.whl",
+        "nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl",
+        "cuda_bindings-13.5.0-cp311-cp311-manylinux_2_24_x86_64.whl",
+    ):
+        (tmp_path / name).touch()
+
+    problems = build_wheelhouse.verify_cuda_runtime(tmp_path)
+
+    assert any("expected torch==2.13.0+cu126" in problem for problem in problems)
+    assert any("expected torchvision==0.28.0+cu126" in problem for problem in problems)
+    assert any("cuda_toolkit-13.0.3.0" in problem for problem in problems)
+    assert any("nvidia_cudnn_cu13" in problem for problem in problems)
+    assert any("cuda_bindings-13.5.0" in problem for problem in problems)
+    assert any("no CUDA 12 runtime wheel" in problem for problem in problems)
+
+
+def test_the_constrained_resolution_keeps_the_locked_pins(
+    tmp_path: Path,
+) -> None:
+    """Resolve the framework's tree offline, the way the build does.
+
+    A newer runtime and a newer numpy are both on offer. The framework's own
+    pin must select the runtime version it declares, while the exported
+    lockfile, passed as constraints, keeps every shared pin where it was: that
+    is the whole reason the CUDA tree is dropped from the pin list instead of
+    being edited to a 12.6 tree that the lockfile does not describe.
+    """
+    wheelhouse = tmp_path / "wheelhouse"
+    _synthetic_wheel(wheelhouse, "torch", "9.9.9+cu126", ("fakecuda==12.6.3", "numpy"))
+    _synthetic_wheel(wheelhouse, "torchvision", "9.9.9+cu126", ("torch==9.9.9",))
+    _synthetic_wheel(wheelhouse, "fakecuda", "12.6.3")
+    _synthetic_wheel(wheelhouse, "fakecuda", "13.0.0")
+    _synthetic_wheel(wheelhouse, "numpy", "1.26.4")
+    _synthetic_wheel(wheelhouse, "numpy", "2.4.0")
+
+    constraints = tmp_path / "lock-requirements.txt"
+    constraints.write_text("numpy==1.26.4\n", encoding="utf-8")
+    pinned = ("torch==9.9.9+cu126", "torchvision==9.9.9+cu126")
+
+    assert _resolve(wheelhouse, constraints, pinned) == {
+        "torch==9.9.9+cu126",
+        "torchvision==9.9.9+cu126",
+        "fakecuda==12.6.3",
+        "numpy==1.26.4",
+    }
+    # Anti-vacuity: without the constraint the resolver picks the newer numpy,
+    # so the assertion above is the constraint doing its job, not a default.
+    assert "numpy==2.4.0" in _resolve(wheelhouse, None, pinned)
+
+
+def _synthetic_wheel(
+    directory: Path, name: str, version: str, requires: tuple[str, ...] = ()
+) -> Path:
+    """Write a metadata-only wheel, enough for a resolver to read."""
+    directory.mkdir(parents=True, exist_ok=True)
+    distribution = f"{name.replace('-', '_')}-{version}"
+    filename = directory / f"{distribution}-py3-none-any.whl"
+    metadata = ["Metadata-Version: 2.1", f"Name: {name}", f"Version: {version}"]
+    metadata += [f"Requires-Dist: {requirement}" for requirement in requires]
+    with zipfile.ZipFile(filename, "w") as archive:
+        archive.writestr(f"{distribution}.dist-info/METADATA", "\n".join(metadata) + "\n")
+        archive.writestr(
+            f"{distribution}.dist-info/WHEEL",
+            "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        )
+        archive.writestr(f"{distribution}.dist-info/RECORD", "")
+    return filename
+
+
+def _resolve(wheelhouse: Path, constraints: Path | None, requirements: tuple[str, ...]) -> set[str]:
+    """What a fresh, environment-free resolution of ``requirements`` selects.
+
+    ``uv pip compile`` resolves without an installed environment, so the answer
+    cannot be polluted by whatever torch happens to be in the venv running the
+    suite.
+    """
+    request = wheelhouse / "requirements.txt"
+    request.write_text("\n".join(requirements) + "\n", encoding="utf-8")
+    command = [
+        "uv",
+        "pip",
+        "compile",
+        str(request),
+        "--no-config",
+        "--no-index",
+        "--find-links",
+        str(wheelhouse),
+    ]
+    if constraints is not None:
+        command += ["-c", str(constraints)]
+    result = subprocess.run(command, cwd=wheelhouse, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    return {
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+
 # ── Static evidence for the container definitions ──
 
 
@@ -346,7 +607,7 @@ def test_container_definitions_pin_the_base_and_the_cuda_build() -> None:
     for text in (containerfile, definition):
         assert "@sha256:" in text
         assert "cu126" in text
-        assert "torch==2.7.1+cu126" in text
+        assert "torch==2.13.0+cu126" in text
         assert "--no-index" in text
         # The source commit is stamped into the image; a container has no
         # .git for commit_git() to read.
