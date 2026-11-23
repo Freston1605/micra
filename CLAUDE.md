@@ -106,6 +106,7 @@ src/                      # Source code (installable package)
         ├── pdf_export.py # HTML → PDF
         ├── report_html.py  # Compat shim re-exporting gui/report/
         ├── report/      # HTML report: render → sections → figures → batch/machine/markup/samples/particle/registry
+        │                 # (+ exportables.py, a leaf: nothing in the package imports it except figures/render hooks)
         │   ├── __init__.py   # public surface: generate_report + section catalog
         │   ├── render.py     # generate_report: builds the document
         │   ├── sections.py   # the section builders + ShapeBodies (HTML blocks)
@@ -116,7 +117,8 @@ src/                      # Source code (installable package)
         │   ├── markup.py     # HTML primitives, CSS, tables
         │   ├── samples.py    # sampling and ordering
         │   ├── particle.py   # particle card with mask overlay
-        │   └── registry.py   # section catalog, anchors, document shell
+        │   ├── registry.py   # section catalog, anchors, document shell
+        │   └── exportables.py # article export: numbering, CSV/LaTeX/SVG/PDF/300 dpi, folder
         ├── qt.py         # PySide6 guard (extra [gui])
         ├── detector/     # Module 2: Batch analysis
         │   ├── window.py, state.py, runner.py
