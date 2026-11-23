@@ -78,6 +78,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script — the `polyx-*` aliases included — remains.
 
 ### Fixed
+- **Upstream licence notice kept verbatim.** `LICENSE` now reads
+  `2025-2026 Cristofher Ferrada` — the range upstream amended into
+  `CrissFerrada/Poly-X-Microplastics@aaf25c0` — instead of a 2026-only line,
+  with the maintainer's `(modifications)` line unchanged below it; MIT
+  requires the original notice to be retained. `tests/test_identity.py` pins
+  the range so a later rewrite cannot quietly narrow it again.
 - **Fourth review of the HPC pipeline (#202).** Both container definitions now
   build: the project wheel is produced in the wheelhouse where `NOTICE` and the
   build backend exist, and the runtime installs it with `--no-index --no-deps`
