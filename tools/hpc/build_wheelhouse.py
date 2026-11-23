@@ -6,6 +6,13 @@ wheels from the pinned PyTorch index: those are the builds that still compile
 the V100 ``sm_70`` kernel set. The default public index is never used for
 those two packages.
 
+The CUDA runtime below them is replaced with them. The lockfile pins the
+default-index tree (torch 2.13 asks for CUDA 13), while the cu126 wheels
+declare CUDA 12.6 exactly; carrying both pins is a resolution conflict. The
+builder therefore drops every ``cuda-*``/``nvidia-*`` pin from the default
+list and resolves that tree from the cu126 wheel's own metadata, with the rest
+of the lockfile passed as a constraint file so numpy and friends cannot drift.
+
 Everything the compute node needs is downloaded here, on a machine with
 internet access, and verified by a ``SHA256SUMS`` manifest. Installation on
 the node is then purely offline::
@@ -41,8 +48,12 @@ ROOT = Path(__file__).resolve().parents[2]
 UV_VERSION = "0.13.7"
 PIP_VERSION = "26.3"
 CUDA_INDEX = "https://download.pytorch.org/whl/cu126"
-CUDA_PACKAGES = ("torch==2.7.1+cu126", "torchvision==0.22.1+cu126")
+PYPI_INDEX = "https://pypi.org/simple"
+CUDA_PACKAGES = ("torch==2.13.0+cu126", "torchvision==0.28.0+cu126")
 REPLACED_PACKAGES = frozenset({"torch", "torchvision"})
+#: Packages that belong to the CUDA runtime tree the framework wheel selects.
+#: The lockfile's versions of them describe the default-index build, not cu126.
+CUDA_RUNTIME_PREFIXES = ("cuda-", "nvidia-")
 _NAME = re.compile(r"^[A-Za-z0-9_.-]+")
 DEFAULT_WHEELHOUSE = Path("dist") / "wheelhouse"
 
@@ -67,7 +78,7 @@ class Plan:
 
 
 def split_requirements(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Keep the locked pins, minus the two packages replaced by CUDA wheels."""
+    """Keep the locked pins, minus the framework and its CUDA runtime tree."""
     default: list[str] = []
     for raw in text.splitlines():
         line = raw.strip()
@@ -75,7 +86,7 @@ def split_requirements(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
             continue
         match = _NAME.match(line)
         name = match.group(0).lower() if match else ""
-        if name in REPLACED_PACKAGES:
+        if name in REPLACED_PACKAGES or name.startswith(CUDA_RUNTIME_PREFIXES):
             continue
         default.append(line)
     return tuple(default), CUDA_PACKAGES
@@ -97,10 +108,12 @@ def make_plan(requirements_text: str, wheelhouse: Path) -> Plan:
         "pip",
         "download",
     )
-    # The lockfile already contains every transitive pin, including the CUDA
-    # runtime libraries the cu126 wheels need. Both downloads are therefore
-    # dependency-free; resolving again would pull newer numpy/Pillow wheels
-    # that contradict the lock.
+    # The lockfile already contains every transitive pin outside the CUDA tree,
+    # so the default download is dependency-free: resolving again would pull
+    # newer numpy/Pillow wheels that contradict the lock. The CUDA download does
+    # resolve, because the tree it needs is the one its own wheel declares; the
+    # exported lockfile is passed as the constraint file, so every other pin
+    # stays where the lockfile put it.
     index_args = ("--index-url", CUDA_INDEX)
     steps = (
         (
@@ -116,7 +129,17 @@ def make_plan(requirements_text: str, wheelhouse: Path) -> Plan:
         ),
         ("write", str(exported), "locked pins without default torch/torchvision"),
         (*pip, "--no-deps", "--dest", str(wheelhouse), "-r", str(exported)),
-        (*pip, "--no-deps", *index_args, "--dest", str(wheelhouse), *cuda),
+        (
+            *pip,
+            *index_args,
+            "--extra-index-url",
+            PYPI_INDEX,
+            "--dest",
+            str(wheelhouse),
+            "-c",
+            str(exported),
+            *cuda,
+        ),
         # The project's own wheel is built here, where the build backend and the
         # network are available, and ships in the wheelhouse. A compute node
         # then installs it with --no-index and never needs hatchling, Babel or
@@ -156,7 +179,11 @@ def _write_index(plan: Plan) -> None:
     header = [
         "# Generated from uv.lock by tools/hpc/build_wheelhouse.py; do not edit.",
         "# Every pin comes from the lockfile except the two CUDA 12.6 wheels, which",
-        "# replace its default-index torch/torchvision pins.",
+        "# replace its default-index torch/torchvision pins. The CUDA runtime below",
+        "# them is resolved from those wheels' own metadata and is present in this",
+        "# directory; it is deliberately not pinned here, because the lockfile pins",
+        "# the tree of the default-index build. The digest of every wheel, including",
+        "# that one, is in SHA256SUMS.",
         "# The project's own wheel sits beside this file and is installed separately:",
         "#   uv pip install --no-index --no-deps micra-*.whl",
         "# Install offline with: uv pip install --no-index --find-links <dir> -r <dir>/requirements.txt",

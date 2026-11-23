@@ -145,7 +145,12 @@ required-version = "==0.13.7"
 # machine replaces them with the CUDA wheel per GPU), but the resolver must
 # not drift to a newer, untested torch. The CPU wheels come from the default
 # index; GPU dev setups override with the CUDA wheel via `uv pip`.
-constraint-dependencies = ["torch==2.7.1", "torchvision==0.22.1"]
+#
+# 2.13.0 is the floor, not a preference: GHSA-63cw-57p8-fm3p kept the
+# weights_only unpickler corruptible until 2.10.0, and 2.13.0 is the first
+# release that closes every advisory Dependabot reports against the pair.
+# torchvision moves with it because it declares `torch==<its release>`.
+constraint-dependencies = ["torch==2.13.0", "torchvision==0.28.0"]
 
 [tool.ruff]
 target-version = "py311"

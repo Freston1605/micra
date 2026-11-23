@@ -49,12 +49,18 @@ uv run micra --help               # command list
 uv run micra gui                  # launcher; needs the gui extra
 ```
 
-`uv sync` resolves the **CPU** torch wheel (2.7.1) from the default index, which
-is what CI uses. For a local GPU, install the matching wheel on top:
+`uv sync` resolves the default-index torch wheel (2.13.0) from the lockfile,
+which is what CI uses. For a local GPU, install the CUDA 12.6 build on top —
+the same one the cluster image carries:
 
 ```bash
-uv pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+uv pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cu126
 ```
+
+Torch is pinned at **2.13.0 or newer**: earlier releases carry advisories,
+including remote code execution through an untrusted checkpoint file. That
+fix does not make an untrusted checkpoint safe to load, so keep using files
+whose digest you can verify (`docs/hpc-environment.md`).
 
 Model weights are not bundled. Nothing is published yet, so
 `micra download-models` has no source to fetch from: copy a `.pt` file into the

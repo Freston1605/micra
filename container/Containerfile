@@ -23,9 +23,10 @@ COPY --from=${UV_IMAGE} /uv /uvx /usr/local/bin/
 RUN uv --version
 
 # Build stage: download every wheel once, including the CUDA 12.6 framework
-# wheels that still compile the V100 sm_70 kernels (torch==2.7.1+cu126 from the
-# cu126 index), and build the project's own wheel here. This stage has
-# internet; the runtime stage below installs with --no-index only.
+# wheels that still compile the V100 sm_70 kernels (torch==2.13.0+cu126 from the
+# cu126 index, with the CUDA 12.6 runtime that wheel declares), and build the
+# project's own wheel here. This stage has internet; the runtime stage below
+# installs with --no-index only.
 FROM base AS wheelhouse
 WORKDIR /src
 # NOTICE is force-included into the wheel by pyproject.toml, so the build fails

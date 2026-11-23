@@ -44,8 +44,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `gh attestation verify` — with the pre-release rule stated once.
 
 ### Changed
+- **PyTorch moves to 2.13.0 and torchvision to 0.28.0 (#203).** The pair is
+  raised in `pyproject.toml` and `uv.lock`, closing the five advisories
+  Dependabot reports against 2.7.1/0.22.1, the last of which clears at 2.13.0.
+  The cluster image keeps its CUDA 12.6 contract: the wheelhouse builder now
+  drops the lockfile's `cuda-*`/`nvidia-*` pins (the default-index tree is
+  CUDA 13) and resolves the runtime from the cu126 wheels' own metadata, with
+  the exported lockfile as constraints. The upgrade does not make an untrusted
+  checkpoint safe to load; the digest rule stands.
 - **Pillow moves to 13.0.0 (#203).** The security pin is raised in
-  `pyproject.toml` and `uv.lock`; the torch pair is unchanged. The desktop ZIP
+  `pyproject.toml` and `uv.lock`. The desktop ZIP
   channel that #203 introduced is retired by ADR-0011, so the fix reaches a
   checkout through `uv sync` and a cluster through the rebuilt image.
 - **Weight downloads require the published digest.** `download()` takes

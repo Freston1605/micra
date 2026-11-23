@@ -189,6 +189,9 @@ data/                     # Labelled YOLO dataset (gitignored); split tools in t
 - Matplotlib 3.9.2
 - PyYAML 6.0.2
 - psutil 6.0.0
+- PyTorch 2.13.0 / torchvision 0.28.0 — constrained, not declared: Ultralytics
+  pulls them in. 2.13.0 is the security floor (ADR-0008) and the cluster image
+  uses the `+cu126` builds.
 - Hatchling (build backend), uv (lockfile + dev workflow)
 
 - 8 GB RAM minimum
