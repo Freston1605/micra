@@ -79,6 +79,7 @@ def _run_campaign(
     *,
     families: tuple[str, ...] = FAMILIES,
     resume: bool = False,
+    extra: tuple[str, ...] = (),
 ) -> None:
     from polyx.pipeline import campaign_app
 
@@ -99,12 +100,24 @@ def _run_campaign(
     ]
     if resume:
         overrides.append("resume=true")
+    overrides.extend(extra)
     monkeypatch.setattr(sys, "argv", overrides)
     campaign_app.campaign()
 
 
 def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _snapshot(root: Path) -> dict[str, str]:
+    """Every file under ``root`` and its digest, to prove nothing was touched."""
+    from polyx.core.provenance import sha256_file
+
+    return {
+        path.relative_to(root).as_posix(): sha256_file(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
 
 
 def test_one_multirun_trains_every_family_under_the_same_protocol(
@@ -125,6 +138,7 @@ def test_one_multirun_trains_every_family_under_the_same_protocol(
             "config.yaml",
             "resolved_protocol.yaml",
             "provenance.json",
+            "execution_identity.json",
             "training_state.json",
             "metrics.json",
             "report.md",
@@ -221,6 +235,68 @@ def test_resuming_a_campaign_skips_finished_families_and_starts_the_missing_ones
     assert set(sync_campaign(root, tmp_path / "local")) == set(FAMILIES)
 
 
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        ("dataset", "dataset fingerprint"),
+        ("weights", "family.weights"),
+    ],
+)
+def test_a_finished_family_is_only_skipped_when_its_identity_still_matches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    selected_language,
+    changed: str,
+    expected: str,
+) -> None:
+    """A finished execution is verified before it is reused, not just its protocol.
+
+    The bug: a completion record was compared against the protocol alone, so a
+    campaign resubmitted against a different dataset or different family
+    weights reprinted the old score and called the family finished.
+    """
+    data_yaml = build_tiny_dataset(tmp_path / "detection")
+    store = _imported_store(tmp_path)
+    root = tmp_path / "campaign"
+    scratch = tmp_path / "scratch"
+
+    _install_framework_doubles(monkeypatch)
+    _run_campaign(monkeypatch, root, data_yaml, store, scratch, families=("yolo_detection",))
+    before = _snapshot(root / "yolo_detection")
+
+    if changed == "dataset":
+        label = data_yaml.parent / "labels" / "val" / "plate_v1.txt"
+        label.write_text(
+            label.read_text(encoding="utf-8").replace("0.375", "0.380", 1), encoding="utf-8"
+        )
+        extra: tuple[str, ...] = ()
+    else:
+        extra = ("family.weights=yolo11n.pt",)
+
+    _install_framework_doubles(monkeypatch)
+    capsys.readouterr()
+    selected_language("en")
+    with pytest.raises(BaseException):  # noqa: B017 - Hydra converts the failure
+        _run_campaign(
+            monkeypatch,
+            root,
+            data_yaml,
+            store,
+            scratch,
+            families=("yolo_detection",),
+            resume=True,
+            extra=extra,
+        )
+
+    captured = capsys.readouterr()
+    error = captured.err + captured.out
+    assert expected in error, f"the refusal must name {expected}"
+    assert "SKIPPED" not in captured.out
+    # The old execution was neither retrained nor rewritten.
+    assert _snapshot(root / "yolo_detection") == before
+
+
 def test_two_detection_variants_coexist_in_one_campaign(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -247,6 +323,36 @@ def test_two_detection_variants_coexist_in_one_campaign(
     assert v11["weights"] == "yolo11n.pt"
     assert (root / "hydra" / "yolo_detection_v11").is_dir()
     assert (root / "yolo_detection_v11" / "metrics.json").is_file()
+
+
+def test_a_campaign_refuses_a_selection_split_other_than_val(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One wrong split fails the whole multirun; no family is trained or skipped."""
+    data_yaml = build_tiny_dataset(tmp_path / "detection")
+    store = _imported_store(tmp_path)
+    root = tmp_path / "campaign"
+    _install_framework_doubles(monkeypatch)
+
+    with pytest.raises(BaseException):  # noqa: B017 - Hydra converts the failure
+        _run_campaign(
+            monkeypatch,
+            root,
+            data_yaml,
+            store,
+            tmp_path / "scratch",
+            families=("yolo_detection", "yolo_segmentation"),
+            extra=("protocol.split=test",),
+        )
+
+    captured = capsys.readouterr()
+    error = captured.err + captured.out
+    assert "'val'" in error, "the error must name the canonical split"
+    assert "held-out" in error, "the error must say why the split is fixed"
+    for family in ("yolo_detection", "yolo_segmentation"):
+        assert not (root / family / "config.yaml").exists(), f"{family} started a fit"
+        assert not (root / family / "metrics.json").exists()
+        assert not (root / family / "checkpoints").exists()
 
 
 def test_the_campaign_refuses_mismatched_or_synthetic_cohorts(

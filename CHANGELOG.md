@@ -7,6 +7,28 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Held-out test evaluation of torchvision Mask R-CNN (#243).** The held-out
+  action now scores the torchvision family as well as Ultralytics detection and
+  segmentation: a finished execution's frozen `checkpoints/best.pt` is rebuilt
+  into its detector from `family.weights`, the cohort's class count and
+  `protocol.image_size`, and its predictions go through the family's own
+  inference path into the same `SharedEvaluator`. Both families write the same
+  `heldout_test.json` shape and identifying fields, with the framework as the
+  only difference. The export's heads carry `class_count + 1` rows, so they are
+  resized before the state dict is loaded; a stock pretrained checkpoint is
+  still transferred before its heads are replaced.
+- **Held-out test evaluation (`polyx.pipeline.heldout`, #242).** A finished execution's
+  frozen `checkpoints/best.pt` is scored once on the `test` fold through the
+  shared evaluator, at one recorded confidence threshold, and the result is its
+  own artifact (`heldout_test.json` + `heldout_test.md`) naming the source
+  execution, the checkpoint SHA-256, the test-cohort fingerprint, the threshold,
+  the overlap rule and the split. Predictions come from the frozen native
+  weights, never from a new Lightning run. The action refuses an unfinished
+  execution and any family without an inference path, never writes the
+  execution's metrics, selection, training state or completion record, and
+  reports `NOT EVALUATED` with a non-zero exit when the dataset declares no
+  test split instead of substituting validation. Documented in the pipeline
+  section of `CLAUDE.md`.
 - **Article export (`polyx.gui.report.exportables`).** The report can now hand
   back what a manuscript needs instead of a screenshot of it: every table and
   figure is numbered in the document's language, and each one gets CSV + booktabs
@@ -44,6 +66,51 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `gh attestation verify` — with the pre-release rule stated once.
 
 ### Changed
+- **Recovery reads callback state by recorded identity, not key spelling
+  (#249 review).** Every checkpoint now states its recovery layout version,
+  the exact `state_key` of the checkpoint and early-stopping callbacks, and the
+  execution root it was written in. Recovery finds each callback through that
+  record, with explicit fallback spellings for older checkpoints, and refuses a
+  missing or ambiguous state. The early-stopping reason is normalised across the
+  integer, boolean, enum-name and enum-value forms; an unrecognised reason is
+  refused instead of being read as stopped or running, and a checkpoint from a
+  newer layout version is refused. A moved execution now resolves its winner
+  from the recorded execution root, so a structurally similar external path is
+  refused even when its directory names match.
+- **Mask R-CNN exports state their format (#249 review).** A native export
+  carries its format, layout version and class count, which select the loading
+  branch explicitly: native heads are resized from the recorded count and then
+  restore their own state dict, while a stock torchvision checkpoint is
+  transferred before the heads are replaced. An unmarked checkpoint whose head
+  rows happen to match the dataset's class count is ambiguous and refused
+  rather than guessed at.
+- **Resume is bound to one execution and loads checkpoints restrictively (#241).**
+  Every execution now writes `execution_identity.json` and embeds the same
+  record in every Lightning checkpoint: resolved family (name, framework, task
+  and weights declaration), initialization-weight identity (verified SHA-256
+  digest when pinned, else the declared name), protocol and dataset
+  fingerprint. A resume compares the requested execution against it and refuses
+  any mismatch with an error naming the field. Lightning's absolute
+  `best_model_path` is resolved inside the execution's own checkpoint
+  directory, so a moved execution resumes and an external path is refused.
+  Recovery metadata, epoch inspection, `fit` resume and re-validation all use
+  restricted `weights_only=True` loading; there is no unrestricted fallback.
+  **Behaviour change:** a checkpoint with no verifiable identity record — every
+  checkpoint written before this version — is now refused with an explanation
+  and left untouched. This supersedes the progress-record fallback #239 added
+  for identity, protocol and dataset fingerprint: the heartbeat is never
+  enough. Staged or imported weights initialise a new run and cannot be
+  mistaken for a resume. `GLOSSARY.md` records **execution identity** and
+  **resume checkpoint**.
+- **Model selection is fixed to the validation split (#238).** A single
+  training execution, a campaign job and a study trial refuse any
+  `protocol.split` other than `val` before the first fit or trial — composed,
+  overridden or searched — with an error that names `val` and says why: the
+  held-out test cohort must never decide which checkpoint, family or trial is
+  kept. The default is unchanged, a run that names no split still selects on
+  `val`, and the study records that canonical value as its fixed split.
+  `GLOSSARY.md` separates the **selection split** from the **held-out test
+  split**, and the pipeline section of `CLAUDE.md` states the rule.
 - **PyTorch moves to 2.13.0 and torchvision to 0.28.0 (#203).** The pair is
   raised in `pyproject.toml` and `uv.lock`, closing the five advisories
   Dependabot reports against 2.7.1/0.22.1, the last of which clears at 2.13.0.
@@ -101,6 +168,25 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script — the `polyx-*` aliases included — remains.
 
 ### Fixed
+- **Fix review of the benchmark-integrity work (#237–#243).** A campaign
+  resubmitted with `resume=true` no longer treats an existing `completion.json`
+  as proof enough: the finished family goes through the engine, which verifies
+  the execution identity and the dataset fingerprint before its metrics are
+  reused, and only then is it reported as skipped — a changed dataset or
+  changed family weights is refused instead of reprinting the old score.
+  Lightning's recorded `best_model_path` is verified before it is resolved, so
+  a same-named checkpoint in another directory is refused while a moved
+  execution still resumes. Held-out evaluation honours a recorded checkpoint
+  only inside the execution it belongs to (a copied tree is scored from its own
+  `checkpoints/best.pt`) and refuses a test cohort whose class map is not the
+  execution's, recording the cohort source (`declared`/`external`) and both
+  fingerprints; inside `test_cohort` the dataset path is now the `dataset` key
+  and `source` names the provenance. The held-out report and the
+  `NOT EVALUATED` line are translated through the catalogs like the rest of
+  the interface, and the epoch heartbeat reads `best_epoch` from the
+  `checkpoint_NNN.ckpt` name instead of deserialising the kept checkpoint every
+  validation pass. Resume refusals now carry stable `PipelineError` codes, and
+  the unused `ResolvedWeights.identity()` is gone.
 - **Upstream licence notice kept verbatim.** `LICENSE` now reads
   `2025-2026 Cristofher Ferrada` — the range upstream amended into
   `CrissFerrada/Poly-X-Microplastics@aaf25c0` — instead of a 2026-only line,

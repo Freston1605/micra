@@ -714,7 +714,7 @@ training wrapper are untouched by this path.
 - One PyTorch Lightning loop trains every family. `lightning_loop.py` builds
   the one `Trainer`, its callbacks and the shared module behaviour
   (`PolyxModule`): optimizer and schedule from the protocol, the with-class
-  score logged as `with_class_score`, the progress record and the native
+  score logged as `with_class_score`, the progress heartbeat and the native
   export. The adapters (`adapters.py`) only build a `LightningModule` and a
   `LightningDataModule`: the Ultralytics ones reuse the YOLO neural module and
   dataloader; Mask R-CNN is the sibling torchvision adapter under the same
@@ -726,6 +726,15 @@ training wrapper are untouched by this path.
   fail to beat `min_delta`. `save_last=True` keeps `last.ckpt` and the
   per-epoch files stay immutable; an atomic `CheckpointIO` renames each one
   into place so a SLURM time limit cannot leave a torn resume point.
+- The selection split is fixed to `val` (`config.validate_selection_split`).
+  A single execution, a campaign job and a study trial all call the one guard
+  before their first fit or trial, so `protocol.split` cannot be composed,
+  overridden or searched to another fold. The error names `val` and says why:
+  the held-out `test` cohort must never decide which checkpoint, family or
+  trial is kept. A run that names no split still selects on `val`, and the
+  study records that canonical value as its fixed split. Held-out evaluation
+  is the separate `polyx.pipeline.heldout` step described below; it is never part of a
+  fit or a search.
 - `protocol` in `conf/protocol/default.yaml` is framework-neutral and consumed
   unchanged: split, seed, epochs, batch, image size, confidence, optimizer, LR,
   momentum, weight decay, schedule, warmup, the benchmark augmentation subset,
@@ -751,31 +760,66 @@ training wrapper are untouched by this path.
   separate ranking figure and never selects a checkpoint or drives Optuna.
   `mask_iou` is class-aware.
 - `execution.py` owns audit, provenance, publication and the artifact layout (`config.yaml`, `resolved_protocol.yaml`,
-  `provenance.json`, `training_state.json`, `progress.json`, `metrics.json`,
+  `execution_identity.json`, `provenance.json`, `training_state.json`, `progress.json`, `metrics.json`,
   `report.md`, `logs/`, `checkpoints/`, `completion.json`). `best.pt` is the
-  kept checkpoint. Saved audit findings are stable codes plus parameters, never
+  kept checkpoint. `execution_identity.json` is the one execution identity:
+  the resolved family (name, framework, task and weights declaration), the
+  initialization-weight identity (verified SHA-256 digest when pinned, else
+  the declared name), the protocol and the dataset fingerprint. Every
+  Lightning checkpoint embeds the same record, so a resume compares the
+  requested execution against the checkpoint that would be restored and
+  refuses any mismatch by field. Files a checkpoint references resolve inside
+  that execution's own `checkpoints/lightning/` directory. Lightning stores an
+  absolute `best_model_path`, so the checkpoint records the execution root it
+  was written in and the winner is resolved from that recorded relative
+  position: a moved execution keeps working, and a path from anywhere else is
+  refused even when its directory names match or a file of the same name
+  exists locally.
+  Saved audit findings are stable codes plus parameters, never
   translated prose. `training_state.json` is published before the metrics it
   accompanies and `completion.json` atomically last, after the final log line; a
   final epoch with missing artifacts is published rather than retrained, using
-  the fit record the progress snapshot carries. Before publishing, the kept
+  the fit record the committed checkpoint carries. Before publishing, the kept
   checkpoint is validated once more, so `metrics.json` and `best.pt` always
   describe the same weights — including after a resume whose remaining epochs
   never improved. A fresh run aimed at an existing execution directory is
   refused: `resume=true` continues it, a new directory starts clean. `PipelineError` carries a stable code, invariant
   English template and parameters; the command logs those and translates only
   at display time.
-- `resume.py` reads the per-epoch progress snapshot; the fit's own record
-  (precision that ran, device, verified weights, augmentation) and the best
-  checkpoint's path travel with it. Lightning writes
-  `checkpoints/lightning/checkpoint_NNN.ckpt` per completed epoch and
-  `last.ckpt`; resuming hands `last.ckpt` to `Trainer.fit`, which restores
-  weights, optimizer, scheduler, epoch progress and both callbacks' state
-  (patience and the kept best). The progress record is the human-readable
-  heartbeat and the guard, not the training authority: the checkpoint decides
-  how many epochs completed. A different protocol or a different dataset
-  fingerprint is refused: relabelled images or an edited COCO export are a
-  different dataset, and the kept weights belong to the bytes that trained
-  them.
+- `resume.py` reads recovery from the Lightning checkpoint, not from the
+  progress record. Lightning writes `checkpoints/lightning/checkpoint_NNN.ckpt`
+  per completed epoch and `last.ckpt`; resuming hands the committed
+  `last.ckpt` to `Trainer.fit`, which restores weights, optimizer, scheduler,
+  epoch progress and both callbacks' state (patience and the kept best). That
+  checkpoint is the one authority for completed epochs, the kept checkpoint and
+  its score, and whether early stopping already fired. It also carries a
+  `polyx_recovery` block with the execution identity above, the resolved fit
+  (precision that ran, device, verified weights, augmentation), the exact
+  callback state keys Lightning used and the execution root it was written in,
+  so an execution whose progress record is missing or one epoch behind is still
+  resumable. The block states its layout version: a checkpoint from a newer
+  engine is refused, not read with rules it did not follow. Callback state is
+  found by the recorded key, with explicit fallback spellings when an older
+  checkpoint carries none; a missing or ambiguous state is refused. The
+  early-stopping reason is normalised across the integer, boolean, enum-name
+  and enum-value forms Lightning may serialise; an unrecognised or missing
+  reason is refused instead of being read as stopped or running. A
+  committed early stop is a finish condition: the resumed job publishes the
+  winner without another fit. A committed state that names no winner, or names
+  a file that is gone, fails by name instead of substituting another epoch.
+  `progress.json` is only the heartbeat and provenance aid — the last epoch a
+  process reported, which leases use to tell a live job from a dead one; its
+  stale values never decide an epoch count, a winner, a stop or whether a
+  checkpoint belongs to this execution. Its `best_epoch` is read from the
+  `checkpoint_NNN.ckpt` file name, so a validation pass never deserialises the
+  kept checkpoint; only a name that carries no epoch opens the file. A legacy checkpoint with no verifiable
+  identity record is refused with an explanation and left untouched: it is not
+  a resume point, even when the heartbeat still carries a protocol and
+  fingerprint. Staged or imported weights initialise a new run and are never a
+  resume point. Every checkpoint read the engine owns uses restricted
+  (`weights_only=True`) deserialization, including the recovery metadata, the
+  epoch inspection and Lightning's own `fit` and `validate`; there is no
+  unrestricted fallback on the pipeline path.
 - Both families validate inside Lightning's validation loop, in `validation_step`.
   YOLO exports the epoch's native snapshot at `on_validation_start` and scores a
   wrapper loaded from that file: Ultralytics fuses and freezes whatever network
@@ -803,11 +847,17 @@ training wrapper are untouched by this path.
   `sweep_space.py` owns the one allowlist both the config and the plugin check,
   so split, seed, augmentation subset and the evaluator cannot be swept, and
   the direction is always maximize. `PolyxOptunaSweeper` injects the actual
-  trial id, and before asking for new trials it recovers every `RUNNING` trial:
-  resume its checkpoint, retry its recorded parameters, or tell the score its
-  finished execution already wrote. Two leases under `trials/.locks/` keep
-  runners apart: `trial_NNN.lock` while a job trains it and
-  `trial_NNN.recovery.lock` while a runner relaunches it. A lease whose owner is
+  trial id, and before asking for new trials it recovers every `RUNNING` trial
+  under the same checkpoint authority as a single execution: a trial whose
+  directory holds a committed Lightning checkpoint resumes from it and never
+  retrains a committed epoch, one whose directory holds none retries its
+  recorded parameters in a clean directory, and one whose execution finished
+  but whose score never reached Optuna is told from its own published metrics.
+  Two leases under `trials/.locks/` keep runners apart: `trial_NNN.lock` while
+  a job trains it and `trial_NNN.recovery.lock` while a runner relaunches it.
+  The training lease is taken before the trial directory is prepared, so a
+  duplicate job stops at the lease instead of deleting the checkpoints and logs
+  of the process that owns the trial. A lease whose owner is
   gone — a same-host liveness probe, or no `progress.json` activity for
   `POLYX_LEASE_TTL` when the owner is on another node — is taken over. Every
   trial writes `record.json` (`sweep_record.py`), and the reader compares the
@@ -830,7 +880,82 @@ training wrapper are untouched by this path.
   each label lives; the native label cache and `.npy` sidecars are neither read
   nor written, so a same-size label edit is always seen.
 - `campaign_app.py` is the multi-family multirun; `family.run_name` names the
-  per-execution directory, so two detection variants can share one root.
+  per-execution directory, so two detection variants can share one root. With
+  `resume=true` a job with a committed checkpoint resumes, one that never
+  started runs normally, and one whose execution already finished is handed to
+  the engine — the component that verifies the execution identity and the
+  dataset fingerprint — before its published metrics are reused. Only a family
+  that still matches is reported as skipped, so a campaign resubmitted against
+  a changed dataset or changed family weights is refused instead of reprinting
+  the old score.
+
+### Held-out test evaluation (`polyx.pipeline.heldout`)
+
+`python -m polyx.pipeline.heldout` is the separate step after selection closes:
+it scores one finished execution's frozen `checkpoints/best.pt` on the `test`
+fold through `SharedEvaluator`, at one confidence threshold. Predictions come
+from the frozen native weights, never from a new Lightning run: each family
+keeps its own inference path and they all hand COCO predictions to the one
+evaluator, with the same prediction floor and per-category budget validation
+uses.
+
+```bash
+python -m polyx.pipeline.heldout --execution runs_train/benchmark/yolo_detection \
+    --output results/heldout/yolo_detection
+python -m polyx.pipeline.heldout --execution runs_train/benchmark/yolo_segmentation \
+    --output results/heldout/yolo_segmentation --confidence 0.25
+python -m polyx.pipeline.heldout --execution runs_train/benchmark/mask_rcnn \
+    --output results/heldout/mask_rcnn
+```
+
+- `--execution` and `--output` are required. `--dataset` names the test cohort
+  (a YOLO `data.yaml` or a canonical COCO store) and defaults to the dataset
+  declaration the execution recorded. The cohort is checked against that
+  declaration before anything is scored: its class/category map must name the
+  execution's own classes, in the same order, or the action refuses and names
+  both maps — a cohort that renames or reorders the polymers would score one
+  as another. The result records where the cohort came from (`declared` for
+  the execution's own dataset, `external` for `--dataset`) together with both
+  fingerprints: the execution's dataset and the fold actually read.
+  `--confidence` defaults to
+  `protocol.confidence` and is recorded as the one operating point; it is
+  never tuned and no threshold is recommended. `--device` defaults to the
+  execution's backend device, and `--force` replaces an earlier result in
+  `--output`. Writing inside the execution directory is refused.
+- The families with an inference path are Ultralytics detection and
+  segmentation (`YOLO.predict` plus the shared COCO converters) and torchvision
+  Mask R-CNN. A Mask R-CNN export is marked with its format, layout version and
+  class count, so the detector is loaded through an explicit branch: a native
+  export has its heads resized from the recorded class count and then restores
+  its own state dict, while a stock torchvision checkpoint is transferred into
+  a stock model before the heads are replaced. The detector is still rebuilt
+  from three facts the state dict does not carry — `family.weights`, the
+  cohort's class count and `protocol.image_size`. An unmarked checkpoint whose
+  head rows happen to equal `class_count + 1` is ambiguous and refused rather
+  than guessed at. It predicts one image at a time, as validation does, and
+  converts through the same helper. A framework outside that table is refused
+  by name.
+  An execution without a `completion.json` is refused, so only a frozen
+  selected checkpoint is read. The recorded checkpoint path counts only inside
+  the execution it came from: a copied tree still carries the original's
+  absolute path, and the copy's own `checkpoints/best.pt` is the file scored
+  rather than the original's bytes.
+- The result is its own artifact: `heldout_test.json` plus `heldout_test.md`,
+  naming the source execution, the family and framework, the checkpoint path
+  and SHA-256, the selected epoch, the test-cohort hashes and fingerprint (the
+  `test` fold's images, labels and declaration), its class map and source,
+  the confidence threshold and
+  its source, the class-aware operating-point F1 with localisation and COCO AP
+  beside it, the overlap rule and the split scored. Both families write the
+  same record: the framework is the only field that changes. The report's
+  labels and the `NOT EVALUATED` line are gettext messages; the JSON keys and
+  their machine tokens stay English (ADR-0004). The execution's
+  `metrics.json`, `training_state.json`, `progress.json` and `completion.json`
+  are never written; the execution tree is read-only for this action.
+- A dataset that declares no `test` split is reported as `NOT EVALUATED` on
+  stderr with exit status 2, in the active language. Validation is never
+  substituted: scoring it here would quietly turn the held-out cohort into a
+  second validation fold.
 
 ## 🖥 HPC glue (src/polyx/hpc/)
 

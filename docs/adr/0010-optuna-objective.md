@@ -31,9 +31,16 @@ SQLite file on work, and no cross-process pruning is attempted.**
 
 `PolyxOptunaSweeper` injects the actual study trial number into each Hydra job.
 Each trial records that id, its parameters and execution path before training.
-On resubmission the sweeper scans those records and relaunches any trial left
-`RUNNING` with a progress snapshot before asking for new trials, so the
-interrupted trial is recovered rather than abandoned. The resolved study name
+On resubmission the sweeper scans those records before asking for new trials and
+recovers any trial left `RUNNING` under the same recovery contract a single
+execution uses (ADR-0007): a trial that committed a Lightning checkpoint resumes
+from it and never trains a committed epoch again, a trial that committed none
+retries its recorded parameters in a clean directory, and a trial whose
+execution finished but whose score never reached Optuna is told from its own
+published metrics. The trial's lease is taken before its directory is prepared,
+so a duplicate runner stops at the lease instead of deleting the work of the
+process that owns the trial: the interrupted trial is recovered rather than
+abandoned. The resolved study name
 and storage are persisted once and reused by the export, which resolves the
 winner strictly by `study.best_trial.number` and requires its metrics.
 

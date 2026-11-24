@@ -10,9 +10,9 @@ or one import, never a second search loop.
 ``sweep_trial_id``. That is the only accepted identity: parameters and Hydra's
 resettable job index are ambiguous after a preemption. Each trial persists a
 record before training; a resubmission with the same trial id resumes the
-recorded execution when it has a progress snapshot, or retries the same
-parameters in a clean directory when it does not. The resolved study name and
-storage are written once and reused by ``sweep_best``.
+recorded execution when it has a committed Lightning checkpoint, or retries the
+same parameters in a clean directory when it does not. The resolved study name
+and storage are written once and reused by ``sweep_best``.
 """
 
 from __future__ import annotations
@@ -27,8 +27,10 @@ from omegaconf import DictConfig, OmegaConf
 
 from polyx.core.i18n import N_
 from polyx.pipeline.artifacts import write_yaml
+from polyx.pipeline.config import SELECTION_SPLIT, validate_selection_split
 from polyx.pipeline.errors import PipelineError
 from polyx.pipeline.optuna_sweeper import install_trial_id_passthrough
+from polyx.pipeline.resume import has_committed_checkpoint
 from polyx.pipeline.sweep_record import (
     acquire_trial_lease,
     release_trial_lease,
@@ -52,8 +54,10 @@ def objective(cfg: DictConfig) -> float:
     trial_id = int(raw["sweep_trial_id"])
     study = _study_record(raw)
     _persist_study(root, study)
-    output = _trial_output_dir(root, trial_id)
-    lease = acquire_trial_lease(output)
+    # The lease comes first: preparing the directory may delete what a previous
+    # attempt left behind, which is only safe once this runner owns the trial.
+    # A duplicate job stops at the lease with that work intact.
+    lease = acquire_trial_lease(trial_directory(root, trial_id))
     if lease is None:
         # This trial is already being trained elsewhere; returning a value
         # here would score one runner's work twice.
@@ -63,6 +67,7 @@ def objective(cfg: DictConfig) -> float:
             trial=trial_id,
         )
     try:
+        output = _trial_output_dir(root, trial_id)
         record = {
             "trial_id": trial_id,
             "parameters": _sampled_parameters(raw),
@@ -72,7 +77,7 @@ def objective(cfg: DictConfig) -> float:
         }
         write_trial_record(**record)
         raw["output_dir"] = str(output)
-        if (output / "progress.json").is_file():
+        if has_committed_checkpoint(output):
             raw["resume"] = True
         summary = run_execution(execution_config_from_raw(raw))
         write_trial_record(**record, status="completed")
@@ -94,6 +99,10 @@ def _study_record(raw: dict[str, Any] | None = None) -> dict[str, Any]:
     params = dict(sweeper.get("params") or {})
     validate_search_space(params)
     protocol = (raw or {}).get("protocol") or {}
+    # The study's fixed selection split is the canonical one, verified here
+    # before the first trial and before the identity is written: a study
+    # cannot be recorded around a test-fold selection.
+    split = validate_selection_split(protocol.get("split", SELECTION_SPLIT))
     return {
         "study_name": str(sweeper.get("study_name") or "polyx-optuna"),
         "storage": str(sweeper.get("storage") or ""),
@@ -103,7 +112,7 @@ def _study_record(raw: dict[str, Any] | None = None) -> dict[str, Any]:
         # outside the search space, so recording them is what lets a reader
         # verify that two sweeps ran under one methodology.
         "fixed": {
-            "split": str(protocol.get("split", "")),
+            "split": split,
             "seed": int(protocol.get("seed", 0)),
             "augmentation_subset": list(protocol.get("augmentation_subset") or []),
             "evaluator": "polyx.pipeline.evaluation.SharedEvaluator",
@@ -150,15 +159,20 @@ def _sampled_parameters(raw: dict) -> dict[str, Any]:
 
 
 def _trial_output_dir(root: Path, trial_id: int) -> Path:
-    """The stable execution directory for one study trial id."""
+    """The stable execution directory for one study trial id.
+
+    Only called while this process holds the trial's lease: the decision below
+    deletes whatever the previous attempt left behind when nothing on disk can
+    be resumed, and a duplicate runner must never do that to a live one.
+    """
     directory = trial_directory(root, trial_id)
-    if (directory / "progress.json").is_file():
+    if has_committed_checkpoint(directory):
         return directory
     if directory.exists() and not (directory / "completion.json").is_file():
-        # A record without a progress snapshot cannot be resumed; retrying the
-        # same parameters in a clean directory is explicit, not an overwrite of
-        # usable work. A *completed* execution is never deleted: the engine
-        # refuses to reuse it, which is loud instead of destructive.
+        # Nothing on disk can be resumed; retrying the same parameters in a
+        # clean directory is explicit, not an overwrite of usable work. A
+        # *completed* execution is never deleted: the engine refuses to reuse
+        # it, which is loud instead of destructive.
         shutil.rmtree(directory)
     directory.mkdir(parents=True, exist_ok=True)
     return directory

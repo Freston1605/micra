@@ -14,6 +14,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from polyx.core.i18n import N_
+from polyx.pipeline.config import SELECTION_SPLIT
+from polyx.pipeline.errors import PipelineError
+
 #: Protocol hyperparameters a trial may change. Split, seed, augmentation
 #: subset and the evaluator are outside this set and cannot be suggested.
 SEARCHABLE_PROTOCOL_FIELDS = frozenset(
@@ -38,6 +42,18 @@ def validate_search_space(names: Iterable[str]) -> None:
     """Refuse any declared name outside ``protocol.<searchable field>``."""
     for name in names:
         parts = str(name).split(".")
+        if len(parts) == 2 and parts[0] == "protocol" and parts[1] == "split":
+            # The selection split is fixed by the pipeline, not tuned. Name the
+            # canonical value here too: a search over folds is refused for the
+            # same reason a composed override is.
+            raise PipelineError(
+                "sweep.selection_split",
+                N_(
+                    "protocol.split is fixed to '%(split)s' and cannot be searched: "
+                    "the held-out test cohort must never decide which trial is kept"
+                ),
+                split=SELECTION_SPLIT,
+            )
         if len(parts) != 2 or parts[0] != "protocol" or parts[1] not in SEARCHABLE_PROTOCOL_FIELDS:
             raise ValueError(
                 "search space may only declare protocol hyperparameters: "

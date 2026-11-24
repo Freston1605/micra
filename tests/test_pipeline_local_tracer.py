@@ -280,6 +280,7 @@ def test_local_tracer_emits_every_artifact_and_names_each_criterion(
         "config.yaml",
         "resolved_protocol.yaml",
         "provenance.json",
+        "execution_identity.json",
         "training_state.json",
         "metrics.json",
         "report.md",
@@ -400,6 +401,7 @@ def test_patience_is_honoured_and_protocol_defaults_are_stable(
     assert state["early_stopping"]["stopped_early"] is True
     # Untouched defaults are the documented ones.
     protocol = yaml.safe_load((output / "resolved_protocol.yaml").read_text(encoding="utf-8"))
+    assert protocol["split"] == "val"
     assert protocol["epochs"] == 8  # overridden above
     assert protocol["batch"] == 8
     assert protocol["image_size"] == 1280
@@ -414,6 +416,37 @@ def test_patience_is_honoured_and_protocol_defaults_are_stable(
     assert protocol["early_stopping"]["mode"] == "max"
     assert protocol["early_stopping"]["patience"] == 2  # overridden above
     assert protocol["early_stopping"]["min_delta"] == pytest.approx(0.001)
+
+
+@pytest.mark.parametrize("split", ["test", "train", "holdout"])
+def test_a_training_execution_refuses_any_selection_split_other_than_val(
+    tmp_path: Path,
+    tiny_dataset: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    selected_language,
+    split: str,
+) -> None:
+    """The held-out test cohort never decides which checkpoint is kept.
+
+    The refusal must land before the first fit and before any execution
+    artifact exists, so a wrong split cannot leave a half-trained folder that
+    a reader mistakes for a result.
+    """
+    selected_language("en")
+    output = tmp_path / "executions" / "not-val"
+    code = _command(
+        f"data_yaml={tiny_dataset}",
+        f"output_dir={output}",
+        "protocol.epochs=1",
+        f"protocol.split={split}",
+    )
+
+    assert code == 1
+    error = capsys.readouterr().err
+    assert "'val'" in error, "the error must name the canonical split"
+    assert "held-out" in error, "the error must say why the split is fixed"
+    assert not output.exists(), "a refused execution wrote artifacts"
 
 
 def test_interrupted_execution_resumes_from_the_last_checkpoint(
@@ -500,15 +533,17 @@ def test_restore_best_false_is_refused_instead_of_crashing_after_training(
     assert not (output / "training_state.json").exists()
 
 
-def test_resume_without_progress_fails_loudly(
+def test_resume_without_a_committed_checkpoint_fails_loudly(
     tmp_path: Path,
     tiny_dataset: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    selected_language,
 ) -> None:
-    """A resume request without a progress snapshot must not restart silently."""
+    """A resume request without a checkpoint must not restart silently."""
     _install_fakes(monkeypatch, [_boxes_prediction()])
     output = tmp_path / "executions" / "never-started"
+    selected_language("en")
 
     code = _command(
         f"data_yaml={tiny_dataset}",
@@ -518,8 +553,9 @@ def test_resume_without_progress_fails_loudly(
     )
 
     assert code == 1
-    assert "no progress" in capsys.readouterr().err
+    assert "no committed Lightning checkpoint" in capsys.readouterr().err
     assert not (output / "training_state.json").exists()
+    assert _FakeYOLO.validation_calls == 0
 
 
 def test_resume_with_a_different_protocol_is_refused(
@@ -555,7 +591,8 @@ def test_resume_with_a_different_protocol_is_refused(
     )
 
     assert code == 1
-    assert "protocol changed" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "protocol.batch changed" in error
     assert not (output / "training_state.json").exists()
 
 
@@ -620,7 +657,7 @@ def test_resume_fingerprints_the_resolved_dataset_outside_the_yaml_directory(
         assert (output / "completion.json").is_file()
     else:
         assert code == 1
-        assert "dataset behind" in capsys.readouterr().err
+        assert "dataset fingerprint" in capsys.readouterr().err
         assert not (output / "training_state.json").exists()
 
 
@@ -654,7 +691,10 @@ def test_headless_box_preflight_names_incompatible_dataset_inputs(
         source = tiny_dataset.read_text(encoding="utf-8")
         tiny_dataset.write_text(source.replace("val: images/val", "val: val.txt"), encoding="utf-8")
     elif problem == "missing-split":
-        overrides = ["protocol.split=holdout"]
+        source = tiny_dataset.read_text(encoding="utf-8")
+        tiny_dataset.write_text(
+            source.replace("val: images/val", "val: images/absent"), encoding="utf-8"
+        )
         offending = tiny_dataset
     elif problem == "legacy-label":
         offending = image
