@@ -14,9 +14,10 @@ fingerprint changes while the labels do not.
     .venv/bin/python tools/data/export_renamed_dataset.py --root data \
         --out data_portable --manifest tools/data/split_manifest.py
 
-Exit status is 0 when every image was exported and verified, 1 when the source
-cannot be exported safely (unpaired labels, duplicate images), and 2 for a
-usage or precondition error.
+Exit status is 0 when every image was exported and verified, 1 when the
+dataset itself cannot be exported safely (a missing or unpaired label, a split
+that is not a directory, a duplicate image), and 2 for a usage or precondition
+error such as a missing declaration or an occupied output folder.
 """
 
 from __future__ import annotations
@@ -52,7 +53,11 @@ COLUMNS = (
 
 
 class ExportError(RuntimeError):
-    """A precondition failed; nothing was written."""
+    """A usage or precondition failure; nothing was written."""
+
+
+class DatasetProblem(RuntimeError):
+    """The dataset is not in a state that can be exported; nothing was written."""
 
 
 def _sha256(path: Path) -> str:
@@ -109,7 +114,7 @@ def _plan(
         directory = Path(str(parsed[split]))
         directory = directory if directory.is_absolute() else root / directory
         if not directory.is_dir():
-            raise ExportError(
+            raise DatasetProblem(
                 f"split '{split}' declares {directory} but it is not a directory "
                 "(a Windows export can leave the split as path text in file names)"
             )
@@ -123,7 +128,7 @@ def _plan(
             stems.add(image.stem)
             label = labels / f"{image.stem}.txt"
             if not label.is_file():
-                raise ExportError(f"missing label for {split}/{image.name}")
+                raise DatasetProblem(f"missing label for {split}/{image.name}")
             digest = _sha256(image)
             plan.append(
                 {
@@ -144,17 +149,49 @@ def _plan(
             for label in sorted(labels.glob("*.txt")):
                 if label.name == "classes.txt" or label.stem in stems:
                     continue
-                raise ExportError(f"unpaired label {split}/{label.name}")
+                raise DatasetProblem(f"unpaired label {split}/{label.name}")
 
-    names = [entry["new_image"] for entry in plan]
-    duplicates = sorted({name for name in names if names.count(name) > 1})
-    if duplicates:
-        raise ExportError(
-            "duplicate images cannot keep separate names: " + ", ".join(duplicates[:5])
-        )
     if not plan:
-        raise ExportError("no images found in the declared splits")
+        raise DatasetProblem("no images found in the declared splits")
+    _verify_names(plan)
     return plan
+
+
+def _verify_names(plan: list[dict]) -> None:
+    """Refuse any two images that would share an exported name.
+
+    The name is a 16-hex prefix of the image digest, so a shared name has three
+    distinct causes and each one needs its own answer: a real prefix collision
+    between different images, one image carrying two different annotation
+    files, a duplicate image that sits in two folds, or a duplicate inside one
+    fold. Collapsing them to one message would hide a collision as a duplicate.
+    """
+    by_name: dict[str, list[dict]] = {}
+    for entry in plan:
+        by_name.setdefault(entry["new_image"], []).append(entry)
+
+    for name, copies in sorted(by_name.items()):
+        if len(copies) < 2:
+            continue
+        originals = ", ".join(f"{entry['split']}/{entry['image'].name}" for entry in copies)
+        digests = {entry["digest"] for entry in copies}
+        if len(digests) > 1:
+            raise DatasetProblem(
+                f"image id prefix collision: {', '.join(sorted(digests))} all shorten to "
+                f"{name} ({originals}); widen the prefix"
+            )
+        labels = {entry["label"].read_bytes() for entry in copies}
+        if len(labels) > 1:
+            raise DatasetProblem(
+                f"the same image carries different labels: {originals}; "
+                "one of the two annotations is wrong and neither can be exported"
+            )
+        splits = {entry["split"] for entry in copies}
+        if len(splits) > 1:
+            raise DatasetProblem(
+                f"byte-identical image in two folds ({', '.join(sorted(splits))}): {originals}"
+            )
+        raise DatasetProblem(f"duplicate image in one fold: {originals}")
 
 
 def _write_declaration(path: Path, parsed: dict[str, Any], splits: list[str]) -> None:
@@ -219,6 +256,9 @@ def main(argv: list[str] | None = None) -> int:
         plan = _plan(root, declared, parsed, _load_manifest(args.manifest))
         classes = {int(key): str(value) for key, value in dict(parsed["names"]).items()}
         expected = _counts(plan, classes)
+    except DatasetProblem as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     except ExportError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

@@ -105,7 +105,7 @@ def test_export_refuses_a_missing_label(tmp_path: Path, capsys: pytest.CaptureFi
     root = _dataset(tmp_path)
     (root / "labels" / "train" / "plate_t2.txt").unlink()
 
-    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 2
+    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 1
     assert "missing label for train/plate_t2.png" in capsys.readouterr().err
     assert not (tmp_path / "portable").exists()
 
@@ -117,7 +117,7 @@ def test_export_refuses_an_unpaired_label(
     root = _dataset(tmp_path)
     (root / "labels" / "train" / "orphan.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
 
-    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 2
+    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 1
     assert "unpaired label train/orphan.txt" in capsys.readouterr().err
 
 
@@ -133,6 +133,82 @@ def test_export_records_the_plate_group_from_the_manifest(tmp_path: Path) -> Non
     assert groups["plate_t1.png"] == "plate_a"
     assert groups["plate_t2.png"] == "plate_a"
     assert groups["plate_v1.png"] == "plate_v1"
+
+
+def test_export_rejects_a_name_prefix_collision_between_different_images(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two distinct images whose 16-hex prefix matches must not merge."""
+    module = _export()
+    root = _dataset(tmp_path)
+    real = module._sha256
+    counter = {"n": 0}
+
+    def fake(path: Path) -> str:
+        if Path(path).suffix.lower() == ".png":
+            counter["n"] += 1
+            return "a" * 16 + f"{counter['n']:048d}"
+        return real(path)
+
+    monkeypatch.setattr(module, "_sha256", fake)
+
+    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 1
+    err = capsys.readouterr().err
+    assert "image id prefix collision" in err
+    assert not (tmp_path / "portable").exists()
+
+
+def test_export_rejects_the_same_image_with_different_labels(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Byte-identical pixels with different annotations are not one image."""
+    module = _export()
+    root = _dataset(tmp_path)
+    (root / "images" / "train" / "plate_copy.png").write_bytes(
+        (root / "images" / "train" / "plate_t1.png").read_bytes()
+    )
+    (root / "labels" / "train" / "plate_copy.txt").write_text(
+        "0 0.5 0.5 0.2 0.2\n", encoding="utf-8"
+    )
+
+    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 1
+    assert "different labels" in capsys.readouterr().err
+
+
+def test_export_rejects_a_byte_identical_image_in_two_folds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _export()
+    root = _dataset(tmp_path)
+    (root / "images" / "val" / "plate_t1.png").write_bytes(
+        (root / "images" / "train" / "plate_t1.png").read_bytes()
+    )
+    (root / "labels" / "val" / "plate_t1.txt").write_bytes(
+        (root / "labels" / "train" / "plate_t1.txt").read_bytes()
+    )
+
+    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 1
+    err = capsys.readouterr().err
+    assert "byte-identical image in two folds" in err
+    assert "train" in err and "val" in err
+
+
+def test_export_rejects_a_duplicate_image_in_one_fold(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _export()
+    root = _dataset(tmp_path)
+    (root / "images" / "train" / "plate_copy.png").write_bytes(
+        (root / "images" / "train" / "plate_t1.png").read_bytes()
+    )
+    (root / "labels" / "train" / "plate_copy.txt").write_bytes(
+        (root / "labels" / "train" / "plate_t1.txt").read_bytes()
+    )
+
+    assert module.main(["--root", str(root), "--out", str(tmp_path / "portable")]) == 1
+    err = capsys.readouterr().err
+    assert "duplicate image in one fold" in err
+    assert "plate_t1.png" in err and "plate_copy.png" in err
 
 
 def test_export_refuses_to_write_inside_the_source_or_over_a_folder(

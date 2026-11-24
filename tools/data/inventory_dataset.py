@@ -251,10 +251,13 @@ def _collect(
 
     for split, directory in directories.items():
         if not directory.is_dir():
-            raise InventoryError(
+            # A layout problem, not a usage error: keep the other splits so the
+            # tables still describe what is there, and report this one.
+            problems.append(
                 f"split '{split}' declares {directory} but it is not a directory "
                 "(a Windows export can leave the split as path text in file names)"
             )
+            continue
         labels_dir = root / "labels" / split
         if not labels_dir.is_dir():
             labels_dir = directory.parent.parent / "labels" / split
@@ -288,6 +291,9 @@ def _collect(
                 if label.name == "classes.txt" or label.stem in stems:
                     continue
                 problems.append(f"unpaired label: {split}/{label.name}")
+
+    if not images:
+        problems.append("no images found in the declared splits")
 
     return images, names, problems, yaml_path
 

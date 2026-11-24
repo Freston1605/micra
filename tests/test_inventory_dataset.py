@@ -153,7 +153,10 @@ def test_inventory_reads_plate_groups_from_an_export_mapping(
     } == {"plate_a": "manifest"}
 
 
-def test_inventory_names_a_layout_that_is_not_a_split_directory(tmp_path: Path) -> None:
+def test_inventory_reports_a_layout_that_is_not_a_split_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The layout is a dataset problem: still inventory it, exit 1."""
     module = _inventory()
     root = tmp_path / "data"
     root.mkdir()
@@ -162,8 +165,30 @@ def test_inventory_names_a_layout_that_is_not_a_split_directory(tmp_path: Path) 
         encoding="utf-8",
     )
 
-    assert module.main(["--root", str(root)]) == 2
-    assert not (root / "inventory").exists()
+    assert module.main(["--root", str(root)]) == 1
+    out = capsys.readouterr().out
+    assert "PROBLEM: split 'train' declares" in out
+    version = json.loads((root / "inventory" / "dataset-version.json").read_text())
+    assert version["totals"]["images"] == 0
+    assert any("not a directory" in problem for problem in version["problems"])
+
+
+def test_inventory_still_writes_a_healthy_split_beside_a_broken_one(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _inventory()
+    root = _dataset(tmp_path)
+    declaration = (root / "data.yaml").read_text(encoding="utf-8")
+    (root / "data.yaml").write_text(
+        declaration.replace("val: images/val", "val: images/val-missing"), encoding="utf-8"
+    )
+
+    assert module.main(["--root", str(root)]) == 1
+    out = capsys.readouterr().out
+    assert "PROBLEM: split 'val' declares" in out
+    images = _read(root / "inventory" / "images.csv")
+    assert {row["split"] for row in images} == {"train"}
+    assert len(images) == 2
 
 
 def test_inventory_refuses_to_overwrite_without_force(

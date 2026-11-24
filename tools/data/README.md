@@ -79,10 +79,16 @@ split:
   training execution records.
 
 Only the presence of EXIF metadata is recorded: capture dates travel because
-they group acquisition sessions, GPS coordinates never do. Exit status is 1
-when the inventory found problems (a missing label, a plate group crossing
-splits, byte-identical images in two folds); the tables are still written so
-the problems can be read from them. `--force` overwrites an earlier inventory.
+they group acquisition sessions, GPS coordinates never do.
+
+Exit status is 1 when the inventory found problems: a missing label, a plate
+group crossing splits, byte-identical images in two folds, a declared split
+that is not a directory, or no images at all. The tables are still written, so
+the problems can be read from them and a healthy split still describes what it
+holds beside a broken one. Status 2 is reserved for a usage or precondition
+failure — no dataset declaration, unreadable class names, an existing inventory
+without `--force` — where no reliable table can be produced. `--force`
+overwrites an earlier inventory.
 
 ## Portable export
 
@@ -99,6 +105,18 @@ The copy keeps the same split, class map and bytes, and adds `mapping.csv`:
 `image_id`, original image and label names, the new paths, the plate group and
 source, both hashes and the box count. The split and class counts are verified
 after the copy, so an export that loses a label fails instead of shipping.
+
+Two images that shorten to the same 16-hex name are never merged. Each cause is
+reported separately: a prefix collision between different images (widen the
+prefix), one image carrying two different annotation files, a byte-identical
+image in two folds, or a duplicate inside one fold. Byte-identical pixels with
+different labels are refused rather than resolved, because one of the two
+annotations is wrong and the export cannot tell which.
+
+Status is 1 when the dataset cannot be exported safely (a missing or unpaired
+label, a split that is not a directory, a duplicate image) and 2 for a usage or
+precondition failure such as a missing declaration or an occupied output
+folder.
 
 Because the fingerprint is taken over the paths, a rename changes it
 (`bc71bab5…` for the study split, `5d3b2473…` for its portable copy) while the
