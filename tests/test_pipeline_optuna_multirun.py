@@ -3,8 +3,8 @@
 Hydra launches one job per sampled trial, the study lives in SQLite on the work
 filesystem, and each trial writes a normal execution. These tests drive that
 path with real Hydra and Optuna; only the model frameworks are doubles. The
-fixed-field guard and a post-multirun step that folds the plugin's result into
-``sweep_best.json`` are covered here too.
+fixed-field guard, the recovery of interrupted trials and a post-multirun step
+that folds the plugin's result into ``sweep_best.json`` are covered here too.
 """
 
 from __future__ import annotations
@@ -17,7 +17,12 @@ import optuna
 import pytest
 import yaml
 
-from tests.test_pipeline_local_tracer import _boxes_prediction
+from tests.test_pipeline_local_tracer import (
+    _boxes_prediction,
+    _empty_prediction,
+    _FakeYOLO,
+    _same_weights,
+)
 from tests.test_pipeline_local_tracer import _install_fakes as _install
 
 
@@ -199,8 +204,14 @@ def test_a_trial_with_a_committed_checkpoint_is_reused_by_its_id(tmp_path: Path)
     assert _trial_output_dir(tmp_path, 3) == trial
 
 
-def test_a_running_record_with_progress_is_pending_for_recovery(tmp_path: Path) -> None:
-    """Resubmission discovers the interrupted trial from its persisted record."""
+def test_a_running_record_without_a_progress_record_is_pending_for_recovery(
+    tmp_path: Path,
+) -> None:
+    """Resubmission discovers the interrupted trial from its persisted record.
+
+    The progress record is not the marker: a trial killed right after its
+    checkpoint was committed has none, and its record still says what to retry.
+    """
     from polyx.pipeline.optuna_sweeper import PolyxOptunaSweeper
 
     trial = tmp_path / "trials" / "trial_002"
@@ -216,7 +227,7 @@ def test_a_running_record_with_progress_is_pending_for_recovery(tmp_path: Path) 
         ),
         encoding="utf-8",
     )
-    (trial / "progress.json").write_text("{}", encoding="utf-8")
+    assert not (trial / "progress.json").exists()
     assert PolyxOptunaSweeper._pending_records(tmp_path, "polyx-optuna", "sqlite:///study.db") == [
         2
     ]
@@ -637,3 +648,318 @@ def test_the_glossary_separates_the_selection_split_from_the_held_out_test_split
     selection = glossary.split("## Selection split\n", 1)[1].split("\n## ", 1)[0]
     assert "`val`" in selection
     assert "held-out" in selection.lower()
+
+
+# --- Recovery of an interrupted trial, staged on the real engine ---
+#
+# A trial killed by a time limit leaves the study ``RUNNING``. The kill is
+# simulated with ``SystemExit``: it is not an ``Exception``, so neither the
+# Hydra launcher nor the Optuna plugin can tell the trial ``FAIL``, and the
+# study keeps exactly the state a preempted job leaves behind. The interruption
+# itself is staged in the real engine, between Lightning committing an epoch's
+# checkpoint and the recorder writing that epoch's progress heartbeat.
+
+
+def _kill_after_checkpoint(monkeypatch: pytest.MonkeyPatch, *, epoch_completed: int) -> None:
+    """Die the moment Lightning has committed an epoch's checkpoint.
+
+    By the time the recorder runs, Lightning has already written ``last.ckpt``
+    and the epoch's ``checkpoint_XXX.ckpt``; only the heartbeat is missing.
+    """
+    from polyx.pipeline import lightning_loop
+
+    real_write = lightning_loop.write_json
+
+    def write_then_die(data: dict, path: Path) -> None:
+        if (
+            Path(path).name == "progress.json"
+            and int(data.get("epoch_completed", -1)) == epoch_completed
+        ):
+            raise SystemExit("simulated preemption after the checkpoint commit")
+        real_write(data, path)
+
+    monkeypatch.setattr(lightning_loop, "write_json", write_then_die)
+
+
+def _kill_during_validation(monkeypatch: pytest.MonkeyPatch, *, call: int) -> None:
+    """Die inside the Nth validation pass, before any epoch is committed."""
+    real_predict = _FakeYOLO.predict
+
+    def predict(self: _FakeYOLO, *args: object, **kwargs: object) -> list:
+        if _FakeYOLO.validation_calls + 1 == call:
+            _FakeYOLO.validation_calls += 1
+            raise SystemExit("simulated kill before the first checkpoint")
+        return real_predict(self, *args, **kwargs)
+
+    monkeypatch.setattr(_FakeYOLO, "predict", predict)
+
+
+def _committed(directory: Path) -> dict:
+    """The checkpoint Lightning committed as this execution's resume point."""
+    import torch
+
+    return torch.load(
+        directory / "checkpoints" / "lightning" / "last.ckpt",
+        map_location="cpu",
+        weights_only=False,
+    )
+
+
+def _committed_best_score(directory: Path) -> float:
+    """The score the committed checkpoint kept, read from Lightning's own state."""
+    committed = _committed(directory)
+    for key, value in committed["callbacks"].items():
+        if key.startswith("ModelCheckpoint"):
+            return float(value["best_model_score"])
+    raise AssertionError("the committed checkpoint holds no ModelCheckpoint state")
+
+
+def test_a_trial_killed_between_the_checkpoint_and_its_progress_resumes(
+    tmp_path: Path,
+    tiny_dataset: Path,
+    work_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The committed epoch decides where the interrupted trial continues.
+
+    The trial is relaunched as a resume of its own directory, returns the score
+    of the committed state, and never trains an epoch it already committed.
+    """
+    output = work_env / "experiments" / "checkpoint-window"
+    study_path = work_env / "studies" / "polyx-optuna.db"
+    trial = output / "trials" / "trial_000"
+    overrides = ("protocol.epochs=2",)
+
+    with monkeypatch.context() as patch:
+        _install(patch, [_boxes_prediction()])
+        _kill_after_checkpoint(patch, epoch_completed=0)
+        with pytest.raises(SystemExit):
+            _run_multirun(patch, output, tiny_dataset, n_trials=1, extra=overrides)
+
+    # The window this ticket closes: the epoch is committed, the heartbeat is not.
+    assert not (trial / "progress.json").exists()
+    committed = _committed(trial)
+    assert committed["epoch"] == 0
+    best_score = _committed_best_score(trial)
+    assert best_score == pytest.approx(1.0)
+    interrupted = _read(trial / "record.json")
+    assert interrupted["status"] == "running"
+    study = optuna.load_study(study_name="polyx-optuna", storage=f"sqlite:///{study_path}")
+    assert study.trials[0].state == optuna.trial.TrialState.RUNNING
+
+    # The epoch that was committed is not trained again: one epoch remains, plus
+    # the publication re-score of the committed winner.
+    _install(monkeypatch, [_empty_prediction(), _boxes_prediction()])
+    _run_multirun(monkeypatch, output, tiny_dataset, n_trials=1, extra=overrides)
+    assert _FakeYOLO.validation_calls == 2, "the committed epoch must not be retrained"
+
+    study = optuna.load_study(study_name="polyx-optuna", storage=f"sqlite:///{study_path}")
+    assert len(study.trials) == 1, "recovery must not ask for a new trial"
+    assert study.trials[0].state == optuna.trial.TrialState.COMPLETE
+    state = _read(trial / "training_state.json")
+    metrics = _read(trial / "metrics.json")
+    assert state["resumed"] is True
+    assert state["resumed_from_epoch"] == 1
+    assert state["resumed_from"] == str(trial / "checkpoints" / "lightning" / "last.ckpt")
+    assert metrics["selected_epoch"] == state["early_stopping"]["best_epoch"] == 0
+    assert metrics["selection"]["value"] == pytest.approx(best_score)
+    assert _same_weights(trial / "checkpoints" / "best.pt", trial / "checkpoints" / "epoch_000.pt")
+    # The value the study records is the score the recovered trial published.
+    assert study.trials[0].value == pytest.approx(best_score)
+    assert study.trials[0].value == pytest.approx(metrics["selection"]["value"])
+
+    record = _read(trial / "record.json")
+    assert record["status"] == "completed"
+    assert record["execution"] == str(trial)
+    assert record["study_name"] == "polyx-optuna"
+    assert record["storage"] == f"sqlite:///{study_path}"
+    assert record["parameters"] == interrupted["parameters"]
+
+
+def test_a_trial_killed_before_its_first_checkpoint_retries_in_a_clean_directory(
+    tmp_path: Path,
+    tiny_dataset: Path,
+    work_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No committed checkpoint: the same parameters are retried from scratch."""
+    output = work_env / "experiments" / "no-checkpoint"
+    study_path = work_env / "studies" / "polyx-optuna.db"
+    trial = output / "trials" / "trial_000"
+
+    with monkeypatch.context() as patch:
+        _install(patch, [_boxes_prediction()])
+        _kill_during_validation(patch, call=1)
+        with pytest.raises(SystemExit):
+            _run_multirun(patch, output, tiny_dataset, n_trials=1)
+
+    assert not (trial / "checkpoints" / "lightning" / "last.ckpt").exists()
+    interrupted = _read(trial / "record.json")
+    trial_id = int(interrupted["trial_id"])
+    sampled = dict(interrupted["parameters"])
+    assert sampled, "a killed job records the parameters it sampled"
+    stale = trial / "logs" / "partial-epoch.artifact"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text("half-written", encoding="utf-8")
+    study = optuna.load_study(study_name="polyx-optuna", storage=f"sqlite:///{study_path}")
+    assert study.trials[trial_id].state == optuna.trial.TrialState.RUNNING
+    assert {name: study.trials[trial_id].params[name] for name in sampled} == sampled
+
+    _install(monkeypatch, [_boxes_prediction(), _boxes_prediction()])
+    _run_multirun(monkeypatch, output, tiny_dataset, n_trials=1)
+    assert not stale.exists(), "a retried trial starts in a clean directory"
+    assert _FakeYOLO.validation_calls == 2, "one epoch plus the publication re-score"
+
+    study = optuna.load_study(study_name="polyx-optuna", storage=f"sqlite:///{study_path}")
+    assert len(study.trials) == 1, "the retry reuses the interrupted trial"
+    assert study.trials[trial_id].state == optuna.trial.TrialState.COMPLETE
+    assert {name: study.trials[trial_id].params[name] for name in sampled} == sampled
+    protocol = yaml.safe_load((trial / "resolved_protocol.yaml").read_text(encoding="utf-8"))
+    for name, value in sampled.items():
+        field = name.split(".", 1)[1]
+        assert protocol[field] == pytest.approx(value)
+    state = _read(trial / "training_state.json")
+    assert state.get("resumed") is not True, "there was no committed epoch to resume"
+    metrics = _read(trial / "metrics.json")
+    assert study.trials[trial_id].value == pytest.approx(metrics["selection"]["value"])
+    assert _read(trial / "record.json")["status"] == "completed"
+
+
+def test_a_trial_another_runner_is_recovering_is_not_launched_twice(tmp_path: Path) -> None:
+    """Two runners cannot relaunch one trial: the recovery lease keeps them apart."""
+    from types import SimpleNamespace
+
+    from polyx.pipeline.optuna_sweeper import PolyxOptunaSweeper
+    from polyx.pipeline.sweep_record import (
+        acquire_trial_lease,
+        release_trial_lease,
+        write_trial_record,
+    )
+
+    trial = SimpleNamespace(
+        number=0, params={"protocol.momentum": 0.9}, state=optuna.trial.TrialState.RUNNING
+    )
+    launcher_calls: list[object] = []
+    study = SimpleNamespace(get_trials=lambda **_kw: [trial], tell=lambda *_a, **_kw: None)
+    sweeper = PolyxOptunaSweeper.__new__(PolyxOptunaSweeper)
+    sweeper.config = SimpleNamespace(output_dir=str(tmp_path))
+    sweeper.study_name = "polyx-optuna"
+    sweeper.storage = "sqlite:///study.db"
+    sweeper.search_space_distributions = None
+    sweeper.launcher = SimpleNamespace(
+        launch=lambda *args, **_kw: launcher_calls.append(args) or []
+    )
+    sweeper.job_idx = 0
+    sweeper.n_trials = 1
+    sweeper._load_study = lambda: study
+    sweeper._process_searchspace_config = lambda: None
+    sweeper._parse_sweeper_params_config = list
+    sweeper._trial_by_number = lambda _study, number: trial
+    sweeper._configure_trials = lambda trials, distributions, fixed: [[] for _ in trials]
+    directory = tmp_path / "trials" / "trial_000"
+    directory.mkdir(parents=True)
+    write_trial_record(
+        trial_id=0,
+        parameters={"protocol.momentum": 0.9},
+        execution=directory,
+        study_name="polyx-optuna",
+        storage="sqlite:///study.db",
+    )
+
+    held = acquire_trial_lease(directory, kind=".recovery")
+    assert held is not None
+    assert sweeper._recover_pending([]) == 0
+    assert launcher_calls == [], "the trial is already being recovered elsewhere"
+
+    # Once the other runner releases it, the same call relaunches the trial.
+    release_trial_lease(held)
+    assert sweeper._recover_pending([]) == 0
+    assert len(launcher_calls) == 1, "the trial must be relaunched exactly once"
+
+
+def test_a_trial_killed_after_its_final_epoch_is_published_without_a_fit(
+    tmp_path: Path,
+    tiny_dataset: Path,
+    work_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A committed final epoch is a finish condition for the study too."""
+    output = work_env / "experiments" / "final-epoch"
+    study_path = work_env / "studies" / "polyx-optuna.db"
+    trial = output / "trials" / "trial_000"
+
+    with monkeypatch.context() as patch:
+        _install(patch, [_boxes_prediction()])
+        _kill_after_checkpoint(patch, epoch_completed=0)
+        with pytest.raises(SystemExit):
+            _run_multirun(patch, output, tiny_dataset, n_trials=1)
+
+    assert _committed(trial)["epoch"] == 0
+    assert not (trial / "progress.json").exists()
+
+    # The epoch loop is on disk: only the publication re-score may run.
+    _install(monkeypatch, [_boxes_prediction()])
+    _run_multirun(monkeypatch, output, tiny_dataset, n_trials=1)
+    assert _FakeYOLO.validation_calls == 1, "a committed final epoch runs no fit"
+
+    study = optuna.load_study(study_name="polyx-optuna", storage=f"sqlite:///{study_path}")
+    assert study.trials[0].state == optuna.trial.TrialState.COMPLETE
+    assert study.trials[0].value == pytest.approx(1.0)
+    state = _read(trial / "training_state.json")
+    metrics = _read(trial / "metrics.json")
+    assert state["epochs_completed"] == 1
+    assert state["resumed_from_epoch"] == 1
+    assert metrics["selected_epoch"] == 0
+    assert metrics["selection"]["value"] == pytest.approx(study.trials[0].value)
+
+
+def test_a_duplicate_runner_leaves_a_live_trials_work_intact(
+    tmp_path: Path,
+    tiny_dataset: Path,
+    work_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The lease must be taken before anything destructive touches the directory.
+
+    A second job for a trial another process is already training has to stop at
+    the lease. It used to wipe the directory first, deleting the checkpoints and
+    logs the live runner was about to publish.
+    """
+    import subprocess
+    import time
+
+    from polyx.core.platform import hostname
+
+    output = work_env / "experiments" / "duplicate"
+    trial = output / "trials" / "trial_000"
+
+    with monkeypatch.context() as patch:
+        _install(patch, [_boxes_prediction()])
+        _kill_during_validation(patch, call=1)
+        with pytest.raises(SystemExit):
+            _run_multirun(patch, output, tiny_dataset, n_trials=1)
+
+    work = trial / "logs" / "training.log"
+    assert work.is_file(), "the killed job left the work a live runner would keep"
+    runner = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    try:
+        lock = output / "trials" / ".locks" / "trial_000.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text(
+            json.dumps({"host": hostname(), "pid": runner.pid, "created": time.time()}),
+            encoding="utf-8",
+        )
+        _install(monkeypatch, [])
+        with pytest.raises(SystemExit):  # Hydra reports the failed recovery
+            _run_multirun(monkeypatch, output, tiny_dataset, n_trials=1)
+        captured = capsys.readouterr()
+        assert "already running in another process" in captured.err + captured.out
+        assert _FakeYOLO.validation_calls == 0, "a busy trial is never trained twice"
+    finally:
+        runner.kill()
+        runner.wait()
+
+    assert work.is_file(), "the duplicate runner must not wipe a live trial's work"
+    assert (trial / "record.json").is_file()
+    assert _read(trial / "record.json")["status"] == "running"

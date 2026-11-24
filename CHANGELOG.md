@@ -7,6 +7,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Held-out test evaluation (`polyx.pipeline.heldout`, #242).** A finished execution's
+  frozen `checkpoints/best.pt` is scored once on the `test` fold through the
+  shared evaluator, at one recorded confidence threshold, and the result is its
+  own artifact (`heldout_test.json` + `heldout_test.md`) naming the source
+  execution, the checkpoint SHA-256, the test-cohort fingerprint, the threshold,
+  the overlap rule and the split. Predictions come from the frozen native
+  weights, never from a new Lightning run. The action refuses an unfinished
+  execution and any non-Ultralytics family, never writes the execution's
+  metrics, selection, training state or completion record, and reports
+  `NOT EVALUATED` with a non-zero exit when the dataset declares no test split
+  instead of substituting validation. Documented in the pipeline section of
+  `CLAUDE.md`.
 - **Article export (`polyx.gui.report.exportables`).** The report can now hand
   back what a manuscript needs instead of a screenshot of it: every table and
   figure is numbered in the document's language, and each one gets CSV + booktabs

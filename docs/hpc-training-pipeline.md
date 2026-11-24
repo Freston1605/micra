@@ -486,14 +486,17 @@ python -m polyx.pipeline.sweep_best --output-dir "$POLYX_HPC_WORK/results/sweep-
 - `PolyxOptunaSweeper` injects the actual study trial number into each job as
   `sweep_trial_id`; identity never comes from parameters or Hydra's resettable
   job index. Before asking for new trials it scans the persisted records and
-  relaunches every trial left `RUNNING`: one with a progress snapshot continues
-  its checkpoint, one without a snapshot retries the same parameters in a clean
-  directory, and one whose execution finished but never reached Optuna is told
-  from its own metrics. A recovered trial keeps its study number; two leases
-  under `trials/.locks/` keep runners apart — a job holds `trial_NNN.lock`
-  while it trains and a runner holds `trial_NNN.recovery.lock` while it
-  relaunches one, so the recovery and the job it starts never block each
-  other. The lease carries its owner's host and pid, so a lease whose local
+  recovers every trial left `RUNNING` from its committed Lightning checkpoint: a
+  trial that has one resumes from it and never retrains a committed epoch, a
+  trial without one retries the same parameters in a clean directory, and one
+  whose execution finished but never reached Optuna is told from its own
+  published metrics. A recovered trial keeps its study number. The trial lease
+  is taken before the directory is prepared, so a duplicate job stops at the
+  lease instead of deleting the work of the process that owns the trial; two
+  leases under `trials/.locks/` keep runners apart — a job holds
+  `trial_NNN.lock` while it trains and a runner holds `trial_NNN.recovery.lock`
+  while it relaunches one, so the recovery and the job it starts never block
+  each other. The lease carries its owner's host and pid, so a lease whose local
   owner is gone is taken over at once; an owner that cannot be probed (another
   node) is taken over once it has shown no activity — no `progress.json` write
   — for `POLYX_LEASE_TTL` (an hour by default), so a killed job cannot block
