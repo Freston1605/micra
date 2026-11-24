@@ -43,6 +43,7 @@ from polyx.pipeline.coco import (
     coco_segmentation_predictions_from_results,
 )
 from polyx.pipeline.dataset import (
+    class_names,
     coco_store_ground_truth,
     dataset_fingerprint,
     ordered_categories,
@@ -54,10 +55,13 @@ from polyx.pipeline.dataset import (
     split_images,
 )
 from polyx.pipeline.errors import PipelineError, report_failure
-from polyx.pipeline.evaluation import PREDICTION_FLOOR, SharedEvaluator, prediction_budget
+from polyx.pipeline.evaluation import (
+    PREDICTION_FLOOR,
+    TEST_SPLIT,
+    SharedEvaluator,
+    prediction_budget,
+)
 
-#: The one fold this action scores. Validation is never substituted.
-TEST_SPLIT = "test"
 #: The families with a native inference path, by framework and the tasks each
 #: one can score here. Mask R-CNN is the torchvision sibling; a framework
 #: outside this table is refused by name.
@@ -77,7 +81,21 @@ class HeldOutNotEvaluated(Exception):
     command reports it on stderr and exits non-zero instead of falling back to
     the validation fold, which would turn the held-out cohort into a second
     validation set.
+
+    The sentence is an English message id with its parameters, translated when
+    the command prints it, so the reason reaches a person in their language
+    while the journal keeps the invariant text.
     """
+
+    def __init__(self, template: str, **parameters: object) -> None:
+        self.template = template
+        self.parameters = parameters
+        super().__init__(template % parameters if parameters else template)
+
+    def display(self) -> str:
+        """The operator-facing sentence, translated in the active language."""
+        translated = _(self.template)
+        return translated % self.parameters if self.parameters else translated
 
 
 def _read_completion(execution: Path) -> dict[str, Any]:
@@ -113,17 +131,22 @@ def _required_record(record: dict[str, Any], field: str, execution: Path) -> Any
 
 
 def _selected_checkpoint(record: dict[str, Any], execution: Path) -> Path:
-    """The kept checkpoint named by the completion record, or the layout's own.
+    """The kept checkpoint of *this* execution, by containment, then by layout.
 
-    A completed execution records an absolute ``checkpoints/best.pt``. Moving
-    the tree leaves that string stale, so the layout's canonical location is
-    accepted as the same file; no other file is substituted.
+    A completed execution records an absolute ``checkpoints/best.pt``. That
+    reference is honoured only while it still points inside the execution: a
+    copied tree carries the original's path, and scoring the original's bytes
+    would report another execution's weights as this one's result. The copy's
+    own canonical location is the fallback; no other file is substituted.
     """
     recorded = Path(str(record.get("checkpoint") or ""))
-    candidates = [recorded, execution / "checkpoints" / "best.pt"]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
+    if recorded.is_absolute():
+        resolved = recorded.resolve()
+        if resolved.is_file() and resolved.is_relative_to(execution):
+            return resolved
+    local = execution / "checkpoints" / "best.pt"
+    if local.is_file():
+        return local
     raise PipelineError(
         "heldout.checkpoint_missing",
         N_("the selected checkpoint of %(path)s is missing: %(checkpoint)s"),
@@ -133,7 +156,12 @@ def _selected_checkpoint(record: dict[str, Any], execution: Path) -> Path:
 
 
 def _declared_dataset(execution: Path, task: str) -> Path:
-    """The dataset declaration the finished execution recorded."""
+    """The dataset declaration the finished execution recorded.
+
+    It is also the class map the held-out cohort is checked against, so an
+    execution that records no source cannot be scored: naming another cohort
+    with ``--dataset`` would leave nothing to verify it against.
+    """
     kind = "YOLO box" if task == "detect" else "COCO mask"
     try:
         raw = yaml.safe_load((execution / "config.yaml").read_text(encoding="utf-8")) or {}
@@ -145,8 +173,8 @@ def _declared_dataset(execution: Path, task: str) -> Path:
         raise PipelineError(
             "heldout.dataset_unrecorded",
             N_(
-                "the execution at %(path)s records no %(kind)s dataset; "
-                "pass --dataset with the test cohort"
+                "the execution at %(path)s records no %(kind)s dataset; the held-out "
+                "cohort cannot be verified against the classes it was trained on"
             ),
             path=str(execution),
             kind=kind,
@@ -159,7 +187,7 @@ def _box_cohort(dataset: Path) -> dict[str, Any]:
     declaration = read_data_yaml(dataset)
     directory = split_directory(dataset, declaration, TEST_SPLIT)
     if directory is None or not directory.is_dir() or not split_images(dataset, TEST_SPLIT):
-        raise HeldOutNotEvaluated(f"no test split is declared in {dataset}")
+        raise HeldOutNotEvaluated(N_("no test split is declared in %(path)s"), path=str(dataset))
     resolved = resolve_box_dataset(dataset, TEST_SPLIT)
     images = resolved.splits[TEST_SPLIT]
     root = dataset.parent
@@ -176,13 +204,14 @@ def _box_cohort(dataset: Path) -> dict[str, Any]:
             hashes[key(image.label)] = sha256_file(image.label)
     return {
         "kind": "yolo_boxes",
-        "source": str(dataset),
+        "dataset": str(dataset),
         "split": TEST_SPLIT,
         "images": len(images),
         "hashes": hashes,
         "fingerprint": dataset_fingerprint(hashes),
         "paths": [image.path for image in images],
         "ground_truth": resolved.ground_truth(TEST_SPLIT),
+        "classes": [resolved.class_names[index] for index in sorted(resolved.class_names)],
         "class_count": len(resolved.class_names),
     }
 
@@ -192,7 +221,7 @@ def _mask_cohort(dataset: Path) -> dict[str, Any]:
     coco = read_coco_store(dataset)
     images = split_coco_images(coco, TEST_SPLIT)
     if not images:
-        raise HeldOutNotEvaluated(f"no test split is declared in {dataset}")
+        raise HeldOutNotEvaluated(N_("no test split is declared in %(path)s"), path=str(dataset))
     hashes = {"dataset.json": sha256_file(dataset / "dataset.json")}
     paths: list[Path] = []
     for image in images:
@@ -208,16 +237,18 @@ def _mask_cohort(dataset: Path) -> dict[str, Any]:
                 image=relative,
             ) from exc
         paths.append(path)
+    classes = [name for _category_id, name in ordered_categories(coco)]
     return {
         "kind": "coco_instances",
-        "source": str(dataset),
+        "dataset": str(dataset),
         "split": TEST_SPLIT,
         "images": len(images),
         "hashes": hashes,
         "fingerprint": dataset_fingerprint(hashes),
         "paths": paths,
         "ground_truth": coco_store_ground_truth(coco, TEST_SPLIT),
-        "class_count": len(ordered_categories(coco)),
+        "classes": classes,
+        "class_count": len(classes),
     }
 
 
@@ -230,6 +261,46 @@ def _cohort(dataset: Path, task: str) -> dict[str, Any]:
             path=str(dataset),
         )
     return _box_cohort(dataset) if task == "detect" else _mask_cohort(dataset)
+
+
+def _dataset_classes(dataset: Path, task: str) -> list[str]:
+    """The class names a dataset declaration holds, in the family's dense order."""
+    try:
+        if task == "detect":
+            declared = class_names(read_data_yaml(dataset))
+            return [declared[index] for index in sorted(declared)]
+        return [name for _category_id, name in ordered_categories(read_coco_store(dataset))]
+    except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
+        raise PipelineError(
+            "heldout.classes_unreadable",
+            N_("cannot read the classes of the execution's dataset %(path)s: %(reason)s"),
+            path=str(dataset),
+            reason=str(exc),
+        ) from exc
+
+
+def _require_same_classes(
+    execution: Path, execution_classes: list[str], cohort_classes: list[str]
+) -> None:
+    """Refuse a cohort that does not describe the execution's own classes.
+
+    A held-out figure only means something on the classes the model was
+    trained to predict: matching class counts are not enough, because a
+    cohort that renames or reorders them would score one polymer as another.
+    """
+    if execution_classes == cohort_classes:
+        return
+    raise PipelineError(
+        "heldout.class_mismatch",
+        N_(
+            "the test cohort of %(path)s declares the classes %(cohort)s, but the "
+            "execution was trained on %(execution)s; the held-out cohort must name "
+            "the execution's own classes"
+        ),
+        path=str(execution),
+        cohort=cohort_classes,
+        execution=execution_classes,
+    )
 
 
 def _predictions(
@@ -374,32 +445,44 @@ def _artifact(
 
 
 def _markdown(artifact: dict[str, Any]) -> str:
-    """A short report; the JSON beside it stays the machine contract."""
+    """A short report; the JSON beside it stays the machine contract.
+
+    Every label is a translated message with named placeholders, so a
+    translator can reorder a label and its value. The JSON keys and their
+    machine tokens (the split, the task, the cohort source, the threshold
+    source) never pass through gettext (ADR-0004).
+    """
     cohort = artifact["test_cohort"]
     checkpoint = artifact["checkpoint"]
     lines = [
-        "# Held-out test evaluation",
+        f"# {_('Held-out test evaluation')}",
         "",
-        f"- Source execution: {artifact['source_execution']}",
-        f"- Family: {artifact['family']['name']} ({artifact['family']['framework']})",
-        f"- Task: {artifact['task']}",
-        f"- Split scored: {artifact['split']}",
-        f"- Checkpoint: {checkpoint['path']}",
-        f"- Checkpoint SHA-256: {checkpoint['sha256']}",
-        f"- Selected epoch: {checkpoint['selected_epoch']}",
-        f"- Test cohort: {cohort['images']} images",
-        f"- Test cohort fingerprint: {cohort['fingerprint']}",
-        (
-            f"- Confidence threshold: {artifact['confidence_threshold']:.2f} "
-            f"({artifact['confidence_source']})"
-        ),
-        f"- Overlap rule: {artifact['overlap']} >= {artifact['iou_threshold']:.2f}",
-        f"- Device: {artifact['device']}",
-        f"- Evaluated at: {artifact['evaluated_at']}",
+        _("- Source execution: %(path)s") % {"path": artifact["source_execution"]},
+        _("- Family: %(name)s (%(framework)s)")
+        % {"name": artifact["family"]["name"], "framework": artifact["family"]["framework"]},
+        _("- Task: %(task)s") % {"task": artifact["task"]},
+        _("- Split scored: %(split)s") % {"split": artifact["split"]},
+        _("- Checkpoint: %(path)s") % {"path": checkpoint["path"]},
+        _("- Checkpoint SHA-256: %(sha256)s") % {"sha256": checkpoint["sha256"]},
+        _("- Selected epoch: %(epoch)s") % {"epoch": checkpoint["selected_epoch"]},
+        _("- Test cohort: %(images)s images") % {"images": cohort["images"]},
+        _("- Test cohort source: %(source)s") % {"source": cohort["source"]},
+        _("- Test cohort fingerprint: %(fingerprint)s") % {"fingerprint": cohort["fingerprint"]},
+        _("- Execution dataset fingerprint: %(fingerprint)s")
+        % {"fingerprint": cohort["execution_fingerprint"]},
+        _("- Confidence threshold: %(threshold).2f (%(source)s)")
+        % {
+            "threshold": artifact["confidence_threshold"],
+            "source": artifact["confidence_source"],
+        },
+        _("- Overlap rule: %(overlap)s >= %(iou).2f")
+        % {"overlap": artifact["overlap"], "iou": artifact["iou_threshold"]},
+        _("- Device: %(device)s") % {"device": artifact["device"]},
+        _("- Evaluated at: %(moment)s") % {"moment": artifact["evaluated_at"]},
         "",
-        "## Figures",
+        f"## {_('Figures')}",
         "",
-        "| Figure | Value | Criterion |",
+        f"| {_('Figure')} | {_('Value')} | {_('Criterion')} |",
         "| --- | --- | --- |",
     ]
     for name, figure in artifact["evaluation"]["figures"].items():
@@ -408,9 +491,9 @@ def _markdown(artifact: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "## Per class",
+                f"## {_('Per class')}",
                 "",
-                "| Class | Figure | Value | Criterion |",
+                f"| {_('Class')} | {_('Figure')} | {_('Value')} | {_('Criterion')} |",
                 "| --- | --- | --- | --- |",
             ]
         )
@@ -422,10 +505,12 @@ def _markdown(artifact: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "The primary figure is the class-aware operating-point F1, the same",
-            "definition the shared evaluator uses for model selection. It is",
-            "reported here once, at the recorded threshold; this action does not",
-            "tune or recommend a threshold.",
+            _(
+                "The primary figure is the class-aware operating-point F1, the same "
+                "definition the shared evaluator uses for model selection. It is "
+                "reported here once, at the recorded threshold; this action does not "
+                "tune or recommend a threshold."
+            ),
             "",
         ]
     )
@@ -485,12 +570,12 @@ def evaluate_heldout(
             path=str(output),
         )
     checkpoint = _selected_checkpoint(completion, execution)
-    cohort = _cohort(
-        Path(dataset).expanduser().resolve()
-        if dataset is not None
-        else _declared_dataset(execution, task),
-        task,
-    )
+    declared = _declared_dataset(execution, task)
+    cohort_dataset = Path(dataset).expanduser().resolve() if dataset is not None else declared
+    cohort = _cohort(cohort_dataset, task)
+    _require_same_classes(execution, _dataset_classes(declared, task), cohort["classes"])
+    cohort["source"] = "declared" if cohort_dataset == declared else "external"
+    cohort["execution_fingerprint"] = completion.get("dataset_fingerprint")
     threshold, threshold_source = _confidence(protocol, confidence)
     backend = completion.get("backend")
     recorded_device = str(backend.get("device") or "") if isinstance(backend, dict) else ""
@@ -588,7 +673,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             force=args.force,
         )
     except HeldOutNotEvaluated as exc:
-        print(f"NOT EVALUATED: {exc}", file=sys.stderr)
+        print(_("NOT EVALUATED: %(reason)s") % {"reason": exc.display()}, file=sys.stderr)
         return 2
     except Exception as exc:  # noqa: BLE001 - the command reports any failure as exit 1
         report_failure(exc, stage="held-out")

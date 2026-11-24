@@ -150,6 +150,25 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script — the `polyx-*` aliases included — remains.
 
 ### Fixed
+- **Fix review of the benchmark-integrity work (#237–#243).** A campaign
+  resubmitted with `resume=true` no longer treats an existing `completion.json`
+  as proof enough: the finished family goes through the engine, which verifies
+  the execution identity and the dataset fingerprint before its metrics are
+  reused, and only then is it reported as skipped — a changed dataset or
+  changed family weights is refused instead of reprinting the old score.
+  Lightning's recorded `best_model_path` is verified before it is resolved, so
+  a same-named checkpoint in another directory is refused while a moved
+  execution still resumes. Held-out evaluation honours a recorded checkpoint
+  only inside the execution it belongs to (a copied tree is scored from its own
+  `checkpoints/best.pt`) and refuses a test cohort whose class map is not the
+  execution's, recording the cohort source (`declared`/`external`) and both
+  fingerprints; inside `test_cohort` the dataset path is now the `dataset` key
+  and `source` names the provenance. The held-out report and the
+  `NOT EVALUATED` line are translated through the catalogs like the rest of
+  the interface, and the epoch heartbeat reads `best_epoch` from the
+  `checkpoint_NNN.ckpt` name instead of deserialising the kept checkpoint every
+  validation pass. Resume refusals now carry stable `PipelineError` codes, and
+  the unused `ResolvedWeights.identity()` is gone.
 - **Upstream licence notice kept verbatim.** `LICENSE` now reads
   `2025-2026 Cristofher Ferrada` — the range upstream amended into
   `CrissFerrada/Poly-X-Microplastics@aaf25c0` — instead of a 2026-only line,

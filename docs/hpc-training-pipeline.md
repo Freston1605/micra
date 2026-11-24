@@ -129,13 +129,16 @@ checkpoints/lightning/last.ckpt          # the resume point Lightning writes
 completion.json        # written last, only after every required artifact exists
 ```
 
-`completion.json` is the completion authority. A campaign skips a family only
-when it exists under the same protocol; a family with a progress snapshot but
-no completion resumes, and a final epoch already on disk is published rather
-than retrained. The log line is written before completion, and every JSON
-artifact is published atomically. A fresh execution refuses an output directory
-that already holds an execution — pass `resume=true` to continue it or choose a
-new directory — so a new run can never inherit a stale completion marker.
+`completion.json` is the completion authority. A campaign verifies a family's
+execution identity and dataset fingerprint before reusing a recorded completion
+— a changed dataset or changed weights is refused rather than skipped — and
+reports `SKIPPED` only after that check passes; a family with a Lightning
+checkpoint but no completion resumes, and a final epoch already on disk is
+published rather than retrained. The log line is written before completion, and
+every JSON artifact is published atomically. A fresh execution refuses an
+output directory that already holds an execution — pass `resume=true` to
+continue it or choose a new directory — so a new run can never inherit a stale
+completion marker.
 
 `provenance.json` always names the dataset source (`yolo_boxes` or
 `coco_instances`). A YOLO-seg execution also records its job-time conversion:
@@ -419,10 +422,13 @@ variant, initialization or protocol the same execution. The progress heartbeat
 is never consulted for identity, an epoch count, a winner or a stop.
 
 The Lightning checkpoint also records its best file as an absolute path.
-Moving the execution makes that prefix stale, so the reference is resolved by
-file name inside the execution's own `checkpoints/lightning/` directory. A
-moved execution resumes; a reference that does not resolve inside it is
-refused rather than read from an external location. Every checkpoint read the
+Moving the execution makes that prefix stale, so the reference is verified
+before it is resolved by file name inside the execution's own
+`checkpoints/lightning/` directory: the old prefix is accepted only when it is
+that same position in another checkout and its directory no longer exists, and
+a reference anywhere else is refused — even when a file of the same name
+exists locally — rather than read from an external location. Every checkpoint
+read the
 pipeline owns — recovery metadata, epoch inspection, `Trainer.fit` resume and
 the publication re-validation — uses restricted `weights_only=True` loading,
 with no unrestricted fallback. A checkpoint that needs a wider unpickler, or

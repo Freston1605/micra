@@ -281,6 +281,49 @@ def test_an_external_checkpoint_reference_is_refused(
     assert _FakeYOLO.validation_calls == 0
 
 
+def test_a_same_named_checkpoint_outside_the_execution_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    selected_language,
+) -> None:
+    """A recorded path is verified before its file name is looked up locally.
+
+    The bug: the reference was resolved by file name first, so an external
+    ``/elsewhere/checkpoint_000.ckpt`` was silently accepted because this
+    execution happened to keep a file of the same name.
+    """
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / "same-name-outside"
+    _interrupt(output, data_yaml, monkeypatch)
+
+    local = output / "checkpoints" / "lightning" / "checkpoint_000.ckpt"
+    assert local.is_file(), "the local name that used to shadow the check must exist"
+    external = tmp_path / "elsewhere" / "checkpoint_000.ckpt"
+    external.parent.mkdir()
+    external.write_bytes(b"another execution's state")
+
+    checkpoint = _committed(output)
+    _callback_state(checkpoint, "ModelCheckpoint")["best_model_path"] = str(external)
+    torch.save(checkpoint, output / "checkpoints" / "lightning" / "last.ckpt")
+
+    _install_fakes(monkeypatch, [])
+    capsys.readouterr()
+    selected_language("en")
+    assert _command(*_overrides(output, data_yaml, epochs=2), "resume=true") == 1
+
+    error = capsys.readouterr().err
+    assert "outside this execution's checkpoint directory" in error
+    assert _FakeYOLO.validation_calls == 0
+
+    # The refusal keeps an invariant identity: the journal records the code,
+    # while the terminal got the translated sentence.
+    import os
+
+    journal = Path(os.environ["POLYX_LOG_DIR"]) / "pipeline.jsonl"
+    assert '"error_code": "resume.checkpoint_outside"' in journal.read_text(encoding="utf-8")
+
+
 def test_a_legacy_checkpoint_without_an_identity_is_refused_and_left_untouched(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -107,9 +107,10 @@ def run_execution(
         # identity, protocol, dataset or an epoch decision.
         recovery = committed_checkpoint(config.output_dir)
         if recovery is None:
-            raise RuntimeError(
-                "resume requested but no committed Lightning checkpoint exists at "
-                f"{layout.lightning_checkpoints}"
+            raise PipelineError(
+                "execution.checkpoint_absent",
+                N_("resume requested but no committed Lightning checkpoint exists at %(path)s"),
+                path=str(layout.lightning_checkpoints),
             )
     else:
         # A fresh execution never reuses an execution directory: an existing

@@ -214,7 +214,10 @@ def test_a_committed_checkpoint_without_a_progress_record_resumes(
 
 
 def test_resume_without_a_committed_checkpoint_fails_without_training(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    selected_language,
 ) -> None:
     """A progress heartbeat cannot stand in for a missing checkpoint."""
     output = tmp_path / "executions" / "authority-no-checkpoint"
@@ -230,6 +233,7 @@ def test_resume_without_a_committed_checkpoint_fails_without_training(
     shutil.rmtree(output / "checkpoints" / "lightning")
 
     _install_fakes(monkeypatch, [])
+    selected_language("en")
     assert _command(*overrides, "resume=true") == 1
     error = capsys.readouterr().err
     assert "committed Lightning checkpoint" in error
@@ -338,3 +342,84 @@ def test_stale_progress_values_never_decide_a_resume(
     assert state["early_stopping"]["wait_count"] == 1
     assert metrics["selected_epoch"] == 1
     assert metrics["selection"]["value"] == pytest.approx(1.0)
+
+
+# ── The heartbeat's kept epoch ────────────────────────────────────────────
+
+
+class _KeptCheckpoint:
+    """The ``ModelCheckpoint`` facts the per-epoch heartbeat reads."""
+
+    def __init__(self, best: Path) -> None:
+        self.best_model_path = str(best)
+        self.last_model_path = ""
+        self.best_model_score = 0.5
+
+
+class _HeartbeatTrainer:
+    """A trainer whose callbacks already ran, with no epoch loop behind it."""
+
+    def __init__(self, best: Path, epoch: int) -> None:
+        from lightning.pytorch.callbacks import EarlyStopping
+
+        self.current_epoch = epoch
+        self.checkpoint_callback = _KeptCheckpoint(best)
+        self.callbacks = [EarlyStopping(monitor="with_class_score", mode="max")]
+
+
+def _recorder(layout, tmp_path: Path):
+    from polyx.pipeline.config import load_config
+    from polyx.pipeline.evaluation import SharedEvaluator
+    from polyx.pipeline.identity import ExecutionIdentity
+    from polyx.pipeline.lightning_loop import ExecutionRecorder
+    from polyx.pipeline.weights import ResolvedWeights
+
+    config = load_config([f"data_yaml={tmp_path / 'data.yaml'}", f"output_dir={layout.root}"])
+    identity = ExecutionIdentity.build(
+        config,
+        weights=ResolvedWeights(name="yolov8n.pt", path=None, verified=False),
+        dataset_fingerprint="heartbeat-fingerprint",
+    )
+    return ExecutionRecorder(
+        layout=layout,
+        config=config,
+        dataset_fingerprint="heartbeat-fingerprint",
+        identity=identity,
+        evaluator=SharedEvaluator(
+            {"images": [], "annotations": [], "categories": []},
+            config.protocol.split,
+            task="detect",
+            confidence_threshold=config.protocol.confidence,
+        ),
+    )
+
+
+def test_the_heartbeat_reads_the_kept_epoch_from_the_checkpoint_name(tmp_path: Path) -> None:
+    """The per-epoch record never deserialises a full checkpoint for its epoch.
+
+    The file in the first case is not a checkpoint at all: the kept epoch comes
+    from ``checkpoint_NNN.ckpt`` itself, which is what the file name encodes.
+    A name that carries no epoch is the one case that opens the file.
+    """
+    from polyx.pipeline.artifacts import ArtifactLayout
+
+    layout = ArtifactLayout(tmp_path / "executions" / "heartbeat")
+    layout.create()
+    layout.lightning_checkpoints.mkdir(parents=True, exist_ok=True)
+    recorder = _recorder(layout, tmp_path)
+
+    named = layout.lightning_checkpoints / "checkpoint_007.ckpt"
+    named.write_bytes(b"the name is all the heartbeat needs")
+    recorder.record_epoch(
+        trainer=_HeartbeatTrainer(named, epoch=7), native_checkpoint=None, score=0.5
+    )
+    progress = _read(layout.progress)
+    assert progress["best_epoch"] == 7
+    assert progress["best_score"] == pytest.approx(0.5)
+
+    unnamed = layout.lightning_checkpoints / "kept.ckpt"
+    torch.save({"epoch": 3}, unnamed)
+    recorder.record_epoch(
+        trainer=_HeartbeatTrainer(unnamed, epoch=4), native_checkpoint=None, score=0.4
+    )
+    assert _read(layout.progress)["best_epoch"] == 3

@@ -35,6 +35,7 @@ from polyx.pipeline.resume import (
     RECOVERY_KEY,
     RecoveryState,
     checkpoint_epoch,
+    checkpoint_name_epoch,
     committed_checkpoint,
 )
 from polyx.pipeline.weights import ResolvedWeights
@@ -191,7 +192,7 @@ class ExecutionRecorder:
         early = _find_callback(trainer, EarlyStopping)
         best_score = getattr(checkpoint, "best_model_score", None)
         best_path = getattr(checkpoint, "best_model_path", "") or None
-        best_epoch = checkpoint_epoch(Path(best_path)) if best_path else -1
+        best_epoch = _reported_best_epoch(best_path) if best_path else -1
         progress = {
             "epochs_completed": int(trainer.current_epoch) + 1,
             "epoch_completed": int(trainer.current_epoch),
@@ -220,6 +221,19 @@ class ExecutionRecorder:
             f"epoch={int(trainer.current_epoch)} with_class_score={score:.6f} "
             f"best={progress['best_score'] if progress['best_score'] is not None else 'none'}",
         )
+
+
+def _reported_best_epoch(best_path: str) -> int:
+    """The kept epoch the heartbeat reports, from the checkpoint's own name.
+
+    ``ModelCheckpoint`` writes ``checkpoint_NNN.ckpt`` with ``NNN`` the
+    zero-based epoch, so the per-epoch record does not deserialise a full
+    checkpoint on every validation pass. A name that carries no epoch is the
+    one case where the file is opened.
+    """
+    path = Path(best_path)
+    epoch = checkpoint_name_epoch(path)
+    return epoch if epoch is not None else checkpoint_epoch(path)
 
 
 def stopped_early(early: Any) -> bool:

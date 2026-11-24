@@ -60,12 +60,6 @@ class ResolvedWeights:
         """The value recorded in ``training_state.json``."""
         return str(self.path) if self.path is not None else self.name
 
-    def identity(self) -> str:
-        """The digest that survives a move, else the declared name."""
-        if self.verified and self.digest:
-            return f"sha256:{self.digest}"
-        return self.name
-
 
 def _configured(value: Path | str | None, variable: str) -> Path | None:
     """An explicit configuration value, else the environment, else nothing."""

@@ -10,35 +10,32 @@ execution uses.
 
 A campaign is resumable without a separate per-family switch. With
 ``resume=true`` a job resumes a family whose committed Lightning checkpoint
-can be recovered, skips a family whose execution already finished under the
-same protocol, and runs a family that never started normally. Passing the flag
-to every job and letting each job decide is what makes resubmission safe. The
+can be recovered, verifies and skips a family whose execution already finished,
+and runs a family that never started normally. Passing the flag to every job
+and letting each job decide is what makes resubmission safe. A finished family
+is not trusted on its protocol alone: the engine checks the execution identity
+and the dataset fingerprint before its published metrics are reused, so a
+campaign resubmitted against another dataset or other weights is refused. The
 progress heartbeat is not the marker: a checkpoint whose heartbeat was never
 written is still resumable.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from pathlib import Path
 
 from hydra import main
 from omegaconf import DictConfig, OmegaConf
 
-from polyx.core.i18n import N_
 from polyx.pipeline.artifacts import ArtifactLayout
-from polyx.pipeline.config import (
-    ExecutionConfig,
-    execution_config_from_raw,
-    protocol_to_dict,
-)
+from polyx.pipeline.config import ExecutionConfig, execution_config_from_raw
 from polyx.pipeline.dataset import (
     ResolvedBoxDataset,
     resolve_box_dataset,
     validate_campaign_cohort,
 )
-from polyx.pipeline.errors import PipelineError, report_failure
+from polyx.pipeline.errors import report_failure
 from polyx.pipeline.execution import run_execution
 from polyx.pipeline.resume import has_committed_checkpoint
 
@@ -57,46 +54,26 @@ def campaign_raw(cfg: DictConfig) -> dict:
     return raw
 
 
-def _selection_from(layout: ArtifactLayout, state: dict) -> float:
-    """The finished execution's score, preferring its recorded selection."""
-    try:
-        metrics = json.loads(layout.metrics.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return float(
-            (state.get("early_stopping") or {}).get("best_score")
-            or (state.get("selection") or {}).get("value")
-            or 0.0
-        )
-    return float(metrics.get("selection", {}).get("value", 0.0))
-
-
-def _resume_decision(config: ExecutionConfig) -> tuple[str, dict]:
-    """Whether this family should resume, be skipped, or start fresh.
+def _resume_decision(config: ExecutionConfig) -> str:
+    """Whether this family resumes, verifies a finished record, or starts fresh.
 
     A family with a committed Lightning checkpoint resumes even when its
-    progress heartbeat is missing or stale; one whose execution already
-    finished under the same protocol is skipped so its metrics are not
-    recomputed or overwritten; everything else starts normally even when the
-    campaign was submitted with ``resume=true``.
+    progress heartbeat is missing or stale. One whose execution already
+    finished is not skipped on the strength of its protocol alone: the engine
+    verifies the whole execution identity — family, initialization weights,
+    protocol and dataset fingerprint — and reuses the published metrics only
+    when it still matches, so a changed dataset or family weight is refused
+    instead of reprinting an old score. Everything else starts normally even
+    when the campaign was submitted with ``resume=true``.
     """
     layout = ArtifactLayout(config.output_dir)
     if layout.completion.is_file():
-        state = json.loads(layout.completion.read_text(encoding="utf-8"))
-        if state.get("protocol") != protocol_to_dict(config):
-            raise PipelineError(
-                "campaign.protocol_changed",
-                N_(
-                    "%(path)s already holds an execution for a different protocol; "
-                    "use a new campaign root instead of resuming over it"
-                ),
-                path=str(config.output_dir),
-            )
-        return "finished", state
+        return "finished"
     if has_committed_checkpoint(config.output_dir):
         # A completed final epoch without a completion record is still resumed:
         # the engine finishes publishing the missing artifacts before retraining.
-        return "resume", {}
-    return "start", {}
+        return "resume"
+    return "start"
 
 
 @main(config_path="conf", config_name="campaign", version_base="1.3")
@@ -125,21 +102,25 @@ def _campaign(cfg: DictConfig) -> float:
             config.data_yaml, config.coco_dataset, config.protocol.split, resolved_boxes=boxes
         )
     run_name = config.output_dir.name
+    finished = False
     if config.resume:
-        decision, state = _resume_decision(config)
-        if decision == "finished":
-            score = _selection_from(ArtifactLayout(config.output_dir), state)
-            print(f"SKIPPED: {run_name} already finished; keeping its metrics")
-            print(f"OUTPUT: {config.output_dir}")
-            print(f"SELECTION: with_class_score={score:.6f}")
-            return score
-        # A family that never started must not be asked to resume.
-        config = replace(config, resume=decision == "resume")
+        decision = _resume_decision(config)
+        finished = decision == "finished"
+        # A family that never started must not be asked to resume. A finished
+        # one is handed to the engine too: it is the component that verifies
+        # the execution identity and the dataset fingerprint, and it returns
+        # the published record without retraining when both still match.
+        config = replace(config, resume=decision != "start")
 
     summary = run_execution(
         config,
         resolved_boxes=boxes if config.family.task == "detect" else None,
     )
+    if finished:
+        print(f"SKIPPED: {run_name} already finished; keeping its metrics")
+        print(f"OUTPUT: {summary['output_dir']}")
+        print(f"SELECTION: {summary['selection']['metric']}={summary['selection']['value']:.6f}")
+        return float(summary["selection"]["value"])
     print(f"CAMPAIGN_FAMILY: {summary['training_state']['family']['name']}")
     print(f"OUTPUT: {summary['output_dir']}")
     print(f"SELECTION: {summary['selection']['metric']}={summary['selection']['value']:.6f}")

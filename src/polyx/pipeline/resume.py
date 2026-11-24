@@ -48,8 +48,24 @@ def checkpoint_epoch(path: Path) -> int:
     try:
         loaded = torch.load(Path(path), map_location="cpu", weights_only=True)
     except Exception as exc:
-        raise RuntimeError(f"cannot read the Lightning checkpoint at {path}: {exc}") from exc
+        raise PipelineError(
+            "resume.checkpoint_unreadable",
+            N_("cannot read the Lightning checkpoint at %(path)s: %(reason)s"),
+            path=str(path),
+            reason=str(exc),
+        ) from exc
     return int(loaded["epoch"])
+
+
+def checkpoint_name_epoch(path: Path) -> int | None:
+    """The epoch a Lightning checkpoint file name carries, when it carries one.
+
+    ``ModelCheckpoint`` writes ``checkpoint_NNN.ckpt`` with ``NNN`` the
+    zero-based epoch, so the heartbeat can report the kept epoch without
+    deserialising the whole checkpoint on every validation pass.
+    """
+    match = _EPOCH_CHECKPOINT.match(Path(path).name)
+    return int(match.group(1)) if match else None
 
 
 @dataclass(frozen=True)
@@ -101,10 +117,9 @@ def load_recovery(
     """Read the recovery authority out of one committed Lightning checkpoint.
 
     ``checkpoint_dir`` is the execution's own Lightning checkpoint directory.
-    Lightning stores ``best_model_path`` as an absolute path, so a moved
-    execution carries the old prefix; the reference is resolved by file name
-    inside ``checkpoint_dir``. A reference whose file is not there is refused,
-    never read from wherever the absolute path happens to point.
+    Lightning stores ``best_model_path`` as an absolute path, so a reference
+    that names another directory — or another execution's same-named file — is
+    refused, never followed.
     """
     import torch
 
@@ -114,12 +129,21 @@ def load_recovery(
     try:
         saved = torch.load(path, map_location="cpu", weights_only=True)
     except Exception as exc:
-        raise RuntimeError(
-            f"cannot read the committed Lightning checkpoint at {path} with restricted "
-            f"loading: {exc}"
+        raise PipelineError(
+            "resume.checkpoint_restricted",
+            N_(
+                "cannot read the committed Lightning checkpoint at %(path)s with "
+                "restricted loading: %(reason)s"
+            ),
+            path=str(path),
+            reason=str(exc),
         ) from exc
     if not isinstance(saved, dict) or "epoch" not in saved:
-        raise RuntimeError(f"{path} is not a Lightning training checkpoint")
+        raise PipelineError(
+            "resume.checkpoint_not_training",
+            N_("%(path)s is not a Lightning training checkpoint"),
+            path=str(path),
+        )
 
     metadata = saved.get(RECOVERY_KEY)
     identity = (
@@ -143,7 +167,11 @@ def load_recovery(
     early = _callback_state(saved, "EarlyStopping", path)
     named = model.get("best_model_path")
     if not named:
-        raise RuntimeError(f"the committed state at {path} names no best checkpoint to publish")
+        raise PipelineError(
+            "resume.winner_unrecorded",
+            N_("the committed state at %(path)s names no best checkpoint to publish"),
+            path=str(path),
+        )
     best = _local_checkpoint(str(named), directory, path)
     fit = metadata.get("fit") if isinstance(metadata, dict) else None
     return RecoveryState(
@@ -180,27 +208,61 @@ def _committed_checkpoint_path(layout: ArtifactLayout) -> Path | None:
 def _local_checkpoint(named: str, directory: Path, checkpoint: Path) -> Path:
     """Resolve a recorded checkpoint reference inside the execution's directory.
 
-    Lightning records an absolute path at save time. The file name is the part
-    that still means something after the execution is moved to another node;
-    the recorded parent is not trusted. A name that is not a Lightning
-    checkpoint, or whose file is not in this execution, is refused.
+    Lightning records an absolute path at save time. The reference must name a
+    file in this execution's own ``checkpoints/lightning`` directory: a path
+    anywhere else is refused, even when a file of the same name happens to
+    exist here, because the record would then be describing another
+    execution's state. An execution moved to another node keeps that same
+    position in the tree and its old directory is gone, so exactly that shape
+    is accepted and resolved to the local file.
     """
     recorded = Path(named)
     name = recorded.name
     if not name or not (_EPOCH_CHECKPOINT.match(name) or name == "last.ckpt"):
-        raise RuntimeError(
-            f"the committed state at {checkpoint} names {recorded}, which is not a "
-            "Lightning checkpoint file"
+        raise PipelineError(
+            "resume.checkpoint_name_invalid",
+            N_(
+                "the committed state at %(state)s names %(checkpoint)s, which is not a "
+                "Lightning checkpoint file"
+            ),
+            state=str(checkpoint),
+            checkpoint=str(recorded),
+        )
+    if recorded.parent != directory and not _relocated(recorded.parent, directory):
+        raise PipelineError(
+            "resume.checkpoint_outside",
+            N_(
+                "the checkpoint %(checkpoint)s named by %(state)s is outside this "
+                "execution's checkpoint directory %(directory)s"
+            ),
+            checkpoint=str(recorded),
+            state=str(checkpoint),
+            directory=str(directory),
         )
     candidate = directory / name
-    if candidate.is_file():
-        return candidate
-    if recorded.is_absolute() and recorded.parent != directory:
-        raise RuntimeError(
-            f"the checkpoint {recorded} named by {checkpoint} is outside this execution's "
-            f"checkpoint directory {directory}, and {candidate} does not exist"
+    if not candidate.is_file():
+        raise PipelineError(
+            "resume.checkpoint_missing",
+            N_("the best checkpoint named by the committed state is missing: %(checkpoint)s"),
+            checkpoint=str(candidate),
         )
-    raise RuntimeError(f"the best checkpoint named by the committed state is missing: {candidate}")
+    return candidate
+
+
+def _relocated(recorded_parent: Path, directory: Path) -> bool:
+    """Whether a recorded directory is this one before the execution moved.
+
+    Lightning writes the absolute path of the moment it saved. A moved tree
+    therefore carries the old prefix, which is this directory's position in
+    another checkout — same name, same parent name — and which no longer
+    exists. A path that still exists is a live directory that is not this
+    execution's checkpoint directory, so the record describes another tree.
+    """
+    return (
+        recorded_parent.name == directory.name
+        and recorded_parent.parent.name == directory.parent.name
+        and not recorded_parent.exists()
+    )
 
 
 def _callback_state(saved: dict[str, Any], prefix: str, path: Path) -> dict[str, Any]:
@@ -210,7 +272,12 @@ def _callback_state(saved: dict[str, Any], prefix: str, path: Path) -> dict[str,
         for key, value in callbacks.items():
             if str(key).startswith(prefix) and isinstance(value, dict):
                 return value
-    raise RuntimeError(f"the committed checkpoint at {path} holds no {prefix} state")
+    raise PipelineError(
+        "resume.callback_unrecorded",
+        N_("the committed checkpoint at %(path)s holds no %(callback)s state"),
+        path=str(path),
+        callback=prefix,
+    )
 
 
 def _number(value: Any) -> float | None:

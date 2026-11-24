@@ -44,7 +44,10 @@ selecting a checkpoint, ranking a campaign family or optimizing a study
 trial, and it never contributes the selection score. Scoring it during
 selection would quietly turn it into a second validation fold and make the
 reported number optimistic. Held-out evaluation is a separate step from the
-training pipeline, not part of it.
+training pipeline, not part of it. The cohort scored there must declare the
+execution's own classes, in the same order; a cohort that renames or reorders
+them is refused, and the result records whether the cohort was the
+execution's declared dataset or an external one, beside both fingerprints.
 
 ## Dataset fingerprint
 
@@ -79,9 +82,11 @@ exists. It is the authority for completed epochs, the kept checkpoint and its
 score, and early-stopping state. Its engine block carries the
 [execution identity](#execution-identity); the checkpoint is read only with
 restricted (`weights_only=True`) deserialization. Lightning records the best
-checkpoint as an absolute path, so the reference is resolved by file name
-inside the execution's own `checkpoints/lightning/` directory: a moved
-execution still resumes, while an external path is refused. The progress
+checkpoint as an absolute path, so the reference is verified before it is
+resolved by file name inside the execution's own `checkpoints/lightning/`
+directory: a moved execution keeps that same position in another checkout and
+its old directory no longer exists, so it still resumes, while a path anywhere
+else is refused even when a file of the same name exists locally. The progress
 record is never a resume checkpoint, and staged or imported weights initialise
 a new run rather than continuing one. _Avoid_: progress snapshot (it is a
 heartbeat, not the resume authority), best.pt (the native export, not a
@@ -95,7 +100,10 @@ with one training execution per family under a common campaign root. The model
 family is the only variable; the protocol, datasets and evaluator are shared.
 A campaign is not a **study**: hyperparameter search belongs to Optuna trials,
 not to the campaign itself. The cluster campaign is one SLURM job that runs the
-families sequentially, never an array of jobs.
+families sequentially, never an array of jobs. A resubmission with
+`resume=true` verifies a finished family's **execution identity** and
+[dataset fingerprint](#dataset-fingerprint) before reusing its published
+metrics; only a family that still matches is skipped.
 
 ## Study
 

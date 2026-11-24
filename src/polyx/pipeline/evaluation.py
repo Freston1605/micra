@@ -30,6 +30,10 @@ from polyx.pipeline.masks import PackedMask, as_mask
 _IOU_THRESHOLDS = [0.50 + 0.05 * index for index in range(10)]
 #: One match rule for every family. Recorded beside every score.
 _OPERATING_IOU = 0.50
+#: The one fold the held-out evaluation reads. Selection never uses it, and
+#: ``heldout`` scores exactly this fold; the token lives here so the criterion
+#: and the scored cohort cannot drift apart.
+TEST_SPLIT = "test"
 #: COCO's per-image, per-category detection cap. Predictions below a very low
 #: floor are still collected so AP can rank them; the operating point filters
 #: at the protocol's confidence instead.
@@ -66,7 +70,7 @@ def _split_role(split: str) -> str:
     cohort the final evaluation reads. Naming it correctly keeps a held-out
     figure from being described as a validation figure.
     """
-    if split == "test":
+    if split == TEST_SPLIT:
         return f"held-out test split '{split}'"
     return f"real-domain validation split '{split}'"
 

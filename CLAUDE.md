@@ -767,9 +767,13 @@ training wrapper are untouched by this path.
   Lightning checkpoint embeds the same record, so a resume compares the
   requested execution against the checkpoint that would be restored and
   refuses any mismatch by field. Files a checkpoint references resolve inside
-  that execution's own `checkpoints/lightning/` directory: Lightning stores an
-  absolute `best_model_path`, which goes stale when the directory moves, so
-  the file name is resolved locally and an external path is refused.
+  that execution's own `checkpoints/lightning/` directory, and the reference
+  is verified before its file name is looked up: Lightning stores an absolute
+  `best_model_path`, so a moved execution's stale prefix is accepted only
+  when it is that same position in another checkout
+  (`…/checkpoints/lightning/<name>`) and the recorded directory no longer
+  exists; any other path is refused, even when a file of the same name exists
+  locally.
   Saved audit findings are stable codes plus parameters, never
   translated prose. `training_state.json` is published before the metrics it
   accompanies and `completion.json` atomically last, after the final log line; a
@@ -797,7 +801,9 @@ training wrapper are untouched by this path.
   `progress.json` is only the heartbeat and provenance aid — the last epoch a
   process reported, which leases use to tell a live job from a dead one; its
   stale values never decide an epoch count, a winner, a stop or whether a
-  checkpoint belongs to this execution. A legacy checkpoint with no verifiable
+  checkpoint belongs to this execution. Its `best_epoch` is read from the
+  `checkpoint_NNN.ckpt` file name, so a validation pass never deserialises the
+  kept checkpoint; only a name that carries no epoch opens the file. A legacy checkpoint with no verifiable
   identity record is refused with an explanation and left untouched: it is not
   a resume point, even when the heartbeat still carries a protocol and
   fingerprint. Staged or imported weights initialise a new run and are never a
@@ -865,7 +871,14 @@ training wrapper are untouched by this path.
   each label lives; the native label cache and `.npy` sidecars are neither read
   nor written, so a same-size label edit is always seen.
 - `campaign_app.py` is the multi-family multirun; `family.run_name` names the
-  per-execution directory, so two detection variants can share one root.
+  per-execution directory, so two detection variants can share one root. With
+  `resume=true` a job with a committed checkpoint resumes, one that never
+  started runs normally, and one whose execution already finished is handed to
+  the engine — the component that verifies the execution identity and the
+  dataset fingerprint — before its published metrics are reused. Only a family
+  that still matches is reported as skipped, so a campaign resubmitted against
+  a changed dataset or changed family weights is refused instead of reprinting
+  the old score.
 
 ### Held-out test evaluation (`polyx.pipeline.heldout`)
 
@@ -888,7 +901,14 @@ python -m polyx.pipeline.heldout --execution runs_train/benchmark/mask_rcnn \
 
 - `--execution` and `--output` are required. `--dataset` names the test cohort
   (a YOLO `data.yaml` or a canonical COCO store) and defaults to the dataset
-  declaration the execution recorded. `--confidence` defaults to
+  declaration the execution recorded. The cohort is checked against that
+  declaration before anything is scored: its class/category map must name the
+  execution's own classes, in the same order, or the action refuses and names
+  both maps — a cohort that renames or reorders the polymers would score one
+  as another. The result records where the cohort came from (`declared` for
+  the execution's own dataset, `external` for `--dataset`) together with both
+  fingerprints: the execution's dataset and the fold actually read.
+  `--confidence` defaults to
   `protocol.confidence` and is recorded as the one operating point; it is
   never tuned and no threshold is recommended. `--device` defaults to the
   execution's backend device, and `--force` replaces an earlier result in
@@ -903,19 +923,26 @@ python -m polyx.pipeline.heldout --execution runs_train/benchmark/mask_rcnn \
   mismatch. It predicts one image at a time, as validation does, and converts
   through the same helper. A framework outside that table is refused by name.
   An execution without a `completion.json` is refused, so only a frozen
-  selected checkpoint is read.
+  selected checkpoint is read. The recorded checkpoint path counts only inside
+  the execution it came from: a copied tree still carries the original's
+  absolute path, and the copy's own `checkpoints/best.pt` is the file scored
+  rather than the original's bytes.
 - The result is its own artifact: `heldout_test.json` plus `heldout_test.md`,
   naming the source execution, the family and framework, the checkpoint path
   and SHA-256, the selected epoch, the test-cohort hashes and fingerprint (the
-  `test` fold's images, labels and declaration), the confidence threshold and
+  `test` fold's images, labels and declaration), its class map and source,
+  the confidence threshold and
   its source, the class-aware operating-point F1 with localisation and COCO AP
   beside it, the overlap rule and the split scored. Both families write the
-  same record: the framework is the only field that changes. The execution's
+  same record: the framework is the only field that changes. The report's
+  labels and the `NOT EVALUATED` line are gettext messages; the JSON keys and
+  their machine tokens stay English (ADR-0004). The execution's
   `metrics.json`, `training_state.json`, `progress.json` and `completion.json`
   are never written; the execution tree is read-only for this action.
 - A dataset that declares no `test` split is reported as `NOT EVALUATED` on
-  stderr with exit status 2. Validation is never substituted: scoring it here
-  would quietly turn the held-out cohort into a second validation fold.
+  stderr with exit status 2, in the active language. Validation is never
+  substituted: scoring it here would quietly turn the held-out cohort into a
+  second validation fold.
 
 ## 🖥 HPC glue (src/polyx/hpc/)
 

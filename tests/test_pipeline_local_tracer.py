@@ -538,10 +538,12 @@ def test_resume_without_a_committed_checkpoint_fails_loudly(
     tiny_dataset: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    selected_language,
 ) -> None:
     """A resume request without a checkpoint must not restart silently."""
     _install_fakes(monkeypatch, [_boxes_prediction()])
     output = tmp_path / "executions" / "never-started"
+    selected_language("en")
 
     code = _command(
         f"data_yaml={tiny_dataset}",
