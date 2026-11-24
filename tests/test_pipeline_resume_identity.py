@@ -15,7 +15,13 @@ from pathlib import Path
 import pytest
 import torch
 
-from polyx.pipeline.resume import checkpoint_epoch, load_recovery
+from polyx.pipeline.errors import PipelineError
+from polyx.pipeline.resume import (
+    RECOVERY_KEY,
+    RECOVERY_VERSION,
+    checkpoint_epoch,
+    load_recovery,
+)
 from tests.conftest import build_tiny_dataset
 from tests.test_pipeline_local_tracer import (
     _boxes_prediction,
@@ -451,3 +457,183 @@ def test_staged_weights_initialise_a_new_run_and_never_count_as_a_resume(
     assert "no committed Lightning checkpoint" in error
     assert _FakeYOLO.validation_calls == 0
     assert not (output / "training_state.json").exists()
+
+
+def test_a_committed_checkpoint_records_the_version_and_a_round_trip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real serialized checkpoint states the recovery layout it follows."""
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / "recovery-version"
+    _interrupt(output, data_yaml, monkeypatch)
+
+    checkpoint = _committed(output)
+    metadata = checkpoint[RECOVERY_KEY]
+    assert metadata["version"] == RECOVERY_VERSION
+    assert Path(metadata["execution_root"]) == output
+    assert metadata["callbacks"]["model_checkpoint"]
+    assert metadata["callbacks"]["early_stopping"]
+
+    state = load_recovery(
+        output / "checkpoints" / "lightning" / "last.ckpt",
+        checkpoint_dir=output / "checkpoints" / "lightning",
+        root=output,
+    )
+    assert state.epochs_completed == 1
+    assert state.best_epoch == 0
+    assert state.identity.family["name"] == "yolo_detection"
+
+
+def test_a_newer_recovery_layout_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A checkpoint from a future engine is not read with today's rules."""
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / "recovery-future"
+    _interrupt(output, data_yaml, monkeypatch)
+
+    checkpoint = _committed(output)
+    checkpoint[RECOVERY_KEY]["version"] = RECOVERY_VERSION + 1
+    torch.save(checkpoint, output / "checkpoints" / "lightning" / "last.ckpt")
+
+    with pytest.raises(PipelineError) as raised:
+        load_recovery(
+            output / "checkpoints" / "lightning" / "last.ckpt",
+            checkpoint_dir=output / "checkpoints" / "lightning",
+            root=output,
+        )
+    assert raised.value.code == "resume.version_unknown"
+
+
+def test_the_engine_reads_a_callback_by_its_recorded_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The generated Lightning key is not the identity recovery depends on."""
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / "callback-alias"
+    _interrupt(output, data_yaml, monkeypatch)
+
+    checkpoint = _committed(output)
+    model_key = next(key for key in checkpoint["callbacks"] if key.startswith("ModelCheckpoint"))
+    alias = "kept-checkpoint-under-a-stable-name"
+    checkpoint["callbacks"][alias] = checkpoint["callbacks"][model_key]
+    checkpoint[RECOVERY_KEY]["callbacks"]["model_checkpoint"] = alias
+    torch.save(checkpoint, output / "checkpoints" / "lightning" / "last.ckpt")
+
+    state = load_recovery(
+        output / "checkpoints" / "lightning" / "last.ckpt",
+        checkpoint_dir=output / "checkpoints" / "lightning",
+        root=output,
+    )
+    assert state.best_epoch == 0
+
+    _install_fakes(monkeypatch, [_boxes_prediction(), _boxes_prediction()])
+    assert _command(*_overrides(output, data_yaml, epochs=2), "resume=true") == 0
+    assert _read(output / "training_state.json")["epochs_completed"] == 2
+
+
+@pytest.mark.parametrize(
+    ("reason", "stopped"),
+    [
+        (0, False),
+        (3, True),
+        (False, False),
+        (True, True),
+        ("NOT_STOPPED", False),
+        ("EarlyStoppingReason.PATIENCE_EXHAUSTED", True),
+        ("non_finite_metric", True),
+    ],
+)
+def test_known_stopping_reason_spellings_are_normalized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: object,
+    stopped: bool,
+) -> None:
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / f"stopping-{reason}"
+    _interrupt(output, data_yaml, monkeypatch)
+
+    checkpoint = _committed(output)
+    early = _callback_state(checkpoint, "EarlyStopping")
+    early["stopping_reason"] = reason
+    torch.save(checkpoint, output / "checkpoints" / "lightning" / "last.ckpt")
+
+    state = load_recovery(
+        output / "checkpoints" / "lightning" / "last.ckpt",
+        checkpoint_dir=output / "checkpoints" / "lightning",
+        root=output,
+    )
+    assert state.stopped_early is stopped
+
+
+@pytest.mark.parametrize("reason", [7, "SOMETHING_ELSE", None, {}, ""])
+def test_an_unknown_stopping_reason_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reason: object
+) -> None:
+    """Guessing would change how the resumed run finishes."""
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / "stopping-unknown"
+    _interrupt(output, data_yaml, monkeypatch)
+
+    checkpoint = _committed(output)
+    early = _callback_state(checkpoint, "EarlyStopping")
+    early["stopping_reason"] = reason
+    torch.save(checkpoint, output / "checkpoints" / "lightning" / "last.ckpt")
+
+    with pytest.raises(PipelineError) as raised:
+        load_recovery(
+            output / "checkpoints" / "lightning" / "last.ckpt",
+            checkpoint_dir=output / "checkpoints" / "lightning",
+            root=output,
+        )
+    assert raised.value.code == "resume.stopping_unknown"
+
+
+def test_a_missing_stopping_state_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / "stopping-missing"
+    _interrupt(output, data_yaml, monkeypatch)
+
+    checkpoint = _committed(output)
+    del _callback_state(checkpoint, "EarlyStopping")["stopping_reason"]
+    torch.save(checkpoint, output / "checkpoints" / "lightning" / "last.ckpt")
+
+    with pytest.raises(PipelineError) as raised:
+        load_recovery(
+            output / "checkpoints" / "lightning" / "last.ckpt",
+            checkpoint_dir=output / "checkpoints" / "lightning",
+            root=output,
+        )
+    assert raised.value.code == "resume.stopping_unrecorded"
+
+
+def test_a_structurally_similar_external_checkpoint_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    selected_language,
+) -> None:
+    """Matching directory names is not provenance, even when the tree exists."""
+    data_yaml = build_tiny_dataset(tmp_path / "dataset")
+    output = tmp_path / "executions" / "similar-name"
+    _interrupt(output, data_yaml, monkeypatch)
+    recorded = Path(_callback_state(_committed(output), "ModelCheckpoint")["best_model_path"])
+
+    lookalike = tmp_path / "elsewhere" / "executions" / output.name / "checkpoints" / "lightning"
+    lookalike.mkdir(parents=True)
+    (lookalike / recorded.name).write_bytes(b"another execution's state")
+    checkpoint = _committed(output)
+    _callback_state(checkpoint, "ModelCheckpoint")["best_model_path"] = str(
+        lookalike / recorded.name
+    )
+    torch.save(checkpoint, output / "checkpoints" / "lightning" / "last.ckpt")
+
+    _install_fakes(monkeypatch, [])
+    capsys.readouterr()
+    selected_language("en")
+    assert _command(*_overrides(output, data_yaml, epochs=2), "resume=true") == 1
+    assert "outside this execution's checkpoint directory" in capsys.readouterr().err
+    assert _FakeYOLO.validation_calls == 0

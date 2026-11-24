@@ -56,6 +56,13 @@ from polyx.pipeline.masks import PackedMask
 from polyx.pipeline.seg_conversion import convert_coco_dataset, image_hashes
 from polyx.pipeline.weights import resolve_weights
 
+#: Marker of this adapter's own Mask R-CNN export, and the layout it follows.
+#: The marker is what selects the loading branch: a stock torchvision
+#: checkpoint carries neither field, and a native export states the class
+#: count its heads were built for.
+MASK_RCNN_FORMAT = "polyx-mask-rcnn"
+MASK_RCNN_FORMAT_VERSION = 1
+
 
 @dataclass
 class PreparedDataset:
@@ -378,8 +385,12 @@ def _torchvision_detector(
         if factory is None:
             raise ValueError(f"unsupported torchvision segmentation model: {weights_name}")
 
-    state = _native_state_dict(weights_path) if weights_path is not None else None
-    if state is None:
+    state, marker = _checkpoint_state(weights_path) if weights_path is not None else (None, None)
+    if marker is not None:
+        model = factory(weights=None, weights_backbone=None, **size)
+        _resize_heads(model, marker)
+        model.load_state_dict(state)
+    elif state is None:
         model = (
             factory(weights=None, weights_backbone=None, **size)
             if untrained
@@ -387,9 +398,14 @@ def _torchvision_detector(
         )
         _resize_heads(model, class_count)
     elif _head_classes(state) == class_count + 1:
-        model = factory(weights=None, weights_backbone=None, **size)
-        _resize_heads(model, class_count)
-        model.load_state_dict(state)
+        # A state dict whose heads already hold this dataset's classes but
+        # which carries no format marker is ambiguous: it could be a native
+        # export or a stock checkpoint that happens to match. Guessing would
+        # decide the loading branch from a row count alone.
+        raise ValueError(
+            "an unmarked checkpoint already has the dataset's class count; "
+            "re-export it as a polyx Mask R-CNN checkpoint so the loading path is explicit"
+        )
     else:
         model = factory(weights=None, weights_backbone=None, **size)
         model.load_state_dict(state)
@@ -406,14 +422,38 @@ def _torchvision_detector(
     return model
 
 
-def _native_state_dict(weights_path: Path) -> dict[str, Any]:
-    """The tensors inside a native export, whether or not it is wrapped."""
+def _checkpoint_state(weights_path: Path) -> tuple[dict[str, Any], int | None]:
+    """The tensors inside a checkpoint and the native class count, if marked.
+
+    This adapter's own export states its format and the class count its heads
+    were built for, so loading never infers the branch from a tensor shape. A
+    stock torchvision checkpoint carries neither and is reported as unmarked.
+    """
     import torch
 
-    state = torch.load(Path(weights_path), map_location="cpu", weights_only=True)
-    if isinstance(state, dict) and "state_dict" in state:
-        state = state["state_dict"]
-    return state
+    saved = torch.load(Path(weights_path), map_location="cpu", weights_only=True)
+    if not isinstance(saved, dict) or "state_dict" not in saved:
+        if not isinstance(saved, dict):
+            raise ValueError(f"{weights_path} does not hold a state dict")
+        return saved, None
+    if saved.get("format") != MASK_RCNN_FORMAT:
+        return saved["state_dict"], None
+    version = saved.get("version")
+    if version != MASK_RCNN_FORMAT_VERSION:
+        raise ValueError(
+            f"{weights_path} uses Mask R-CNN export version {version!r}; "
+            f"this engine reads version {MASK_RCNN_FORMAT_VERSION}"
+        )
+    classes = saved.get("class_count")
+    if not isinstance(classes, int) or classes <= 0:
+        raise ValueError(f"{weights_path} is a native Mask R-CNN export with no class count")
+    state = saved["state_dict"]
+    rows = _head_classes(state)
+    if rows != classes + 1:
+        raise ValueError(
+            f"{weights_path} declares {classes} classes but its box head holds {rows} rows"
+        )
+    return state, classes
 
 
 def _head_classes(state: dict[str, Any]) -> int | None:
@@ -1294,10 +1334,19 @@ class _MaskModule(PolyxModule):
         self.export_native(path, epoch=int(self.current_epoch))
 
     def export_native(self, path: Path, epoch: int | None = None) -> None:
-        """Write the detector's weights in the family's own format."""
+        """Write the detector's weights in the family's own format.
+
+        The file states its format, version and class count, so a later load
+        selects the native branch from metadata instead of inferring it from a
+        head row count that a stock checkpoint could also match.
+        """
         import torch
 
+        class_count = int(self.net.roi_heads.box_predictor.cls_score.out_features) - 1
         payload = {
+            "format": MASK_RCNN_FORMAT,
+            "version": MASK_RCNN_FORMAT_VERSION,
+            "class_count": class_count,
             "state_dict": self.net.state_dict(),
             "epoch": int(self.current_epoch if epoch is None else epoch),
         }

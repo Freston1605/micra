@@ -676,3 +676,80 @@ def test_mask_rcnn_requires_the_coco_mask_dataset(
     assert code == 1
     assert "coco mask dataset" in capsys.readouterr().err.lower()
     assert not (tmp_path / "executions" / "wrong-source" / "training_state.json").exists()
+
+
+class _LoaderProbe:
+    """A stand-in detector that records the head size in force when weights load."""
+
+    def __init__(self) -> None:
+        import types
+
+        self.roi_heads = types.SimpleNamespace(
+            box_predictor=types.SimpleNamespace(
+                cls_score=types.SimpleNamespace(in_features=8, out_features=91)
+            ),
+            mask_predictor=types.SimpleNamespace(conv5_mask=types.SimpleNamespace(in_channels=8)),
+        )
+        self.rows_at_load: list[int] = []
+
+    def load_state_dict(self, state: object, strict: bool = True) -> None:
+        self.rows_at_load.append(self.roi_heads.box_predictor.cls_score.out_features)
+
+
+def test_stock_native_and_ambiguous_mask_checkpoints_take_separate_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The format marker selects the loading branch; a row count never does."""
+    import torch
+    import torchvision.models.detection
+
+    from polyx.pipeline.adapters import (
+        MASK_RCNN_FORMAT,
+        MASK_RCNN_FORMAT_VERSION,
+        _torchvision_detector,
+    )
+
+    class_count = 3
+    probe = _LoaderProbe()
+    monkeypatch.setattr(
+        torchvision.models.detection,
+        "maskrcnn_resnet50_fpn_v2",
+        lambda **_kwargs: probe,
+    )
+    head = "roi_heads.box_predictor.cls_score.weight"
+
+    stock = tmp_path / "stock.pt"
+    torch.save({"state_dict": {head: torch.zeros(91, 8)}}, stock)
+    model = _torchvision_detector("maskrcnn_resnet50_fpn_v2", class_count, 64, stock)
+    assert model.rows_at_load == [91], "stock weights load before the heads are replaced"
+
+    probe = _LoaderProbe()
+    monkeypatch.setattr(
+        torchvision.models.detection,
+        "maskrcnn_resnet50_fpn_v2",
+        lambda **_kwargs: probe,
+    )
+    native = tmp_path / "native.pt"
+    torch.save(
+        {
+            "format": MASK_RCNN_FORMAT,
+            "version": MASK_RCNN_FORMAT_VERSION,
+            "class_count": class_count,
+            "state_dict": {head: torch.zeros(class_count + 1, 8)},
+        },
+        native,
+    )
+    model = _torchvision_detector("maskrcnn_resnet50_fpn_v2", class_count, 64, native)
+    assert model.rows_at_load == [class_count + 1], "native heads are restored as exported"
+
+    ambiguous = tmp_path / "ambiguous.pt"
+    probe = _LoaderProbe()
+    monkeypatch.setattr(
+        torchvision.models.detection,
+        "maskrcnn_resnet50_fpn_v2",
+        lambda **_kwargs: probe,
+    )
+    torch.save({"state_dict": {head: torch.zeros(class_count + 1, 8)}}, ambiguous)
+    with pytest.raises(ValueError, match="unmarked checkpoint"):
+        _torchvision_detector("maskrcnn_resnet50_fpn_v2", class_count, 64, ambiguous)
+    assert probe.rows_at_load == [], "the ambiguous file was never guessed at"

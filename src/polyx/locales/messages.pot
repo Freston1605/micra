@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 14:52-0300\n"
+"POT-Creation-Date: 2026-11-24 16:17-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -6474,51 +6474,82 @@ msgstr ""
 msgid "recovery of interrupted trials failed (%(count)d); the study was not extended"
 msgstr ""
 
-#: src/polyx/pipeline/resume.py:277
-#, python-format
-msgid "the committed checkpoint at %(path)s holds no %(callback)s state"
-msgstr ""
-
-#: src/polyx/pipeline/resume.py:144
-#, python-format
-msgid "%(path)s is not a Lightning training checkpoint"
-msgstr ""
-
-#: src/polyx/pipeline/resume.py:157
-#, python-format
-msgid ""
-"cannot resume %(path)s: the committed checkpoint at %(checkpoint)s carries no verifiable "
-"execution identity; it is left untouched, so start a new output directory instead of resuming"
-msgstr ""
-
-#: src/polyx/pipeline/resume.py:172
-#, python-format
-msgid "the committed state at %(path)s names no best checkpoint to publish"
-msgstr ""
-
-#: src/polyx/pipeline/resume.py:224
-#, python-format
-msgid "the committed state at %(state)s names %(checkpoint)s, which is not a Lightning checkpoint file"
-msgstr ""
-
-#: src/polyx/pipeline/resume.py:234
+#: src/polyx/pipeline/resume.py:296
 #, python-format
 msgid ""
 "the checkpoint %(checkpoint)s named by %(state)s is outside this execution's checkpoint "
 "directory %(directory)s"
 msgstr ""
 
-#: src/polyx/pipeline/resume.py:246
+#: src/polyx/pipeline/resume.py:356
+#, python-format
+msgid ""
+"the committed checkpoint at %(path)s holds more than one %(callback)s state, so recovery cannot "
+"choose which one to use"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:431
+#, python-format
+msgid ""
+"the committed checkpoint at %(path)s records an early-stopping state %(value)s that this engine "
+"does not recognise"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:169
+#, python-format
+msgid "%(path)s is not a Lightning training checkpoint"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:180
+#, python-format
+msgid ""
+"cannot resume %(path)s: its committed checkpoint uses recovery layout %(version)s, and this "
+"engine reads up to %(supported)s"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:192
+#, python-format
+msgid ""
+"cannot resume %(path)s: the committed checkpoint at %(checkpoint)s carries no verifiable "
+"execution identity; it is left untouched, so start a new output directory instead of resuming"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:207
+#, python-format
+msgid "the committed state at %(path)s names no best checkpoint to publish"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:274
+#, python-format
+msgid "the committed state at %(state)s names %(checkpoint)s, which is not a Lightning checkpoint file"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:289
 #, python-format
 msgid "the best checkpoint named by the committed state is missing: %(checkpoint)s"
 msgstr ""
 
-#: src/polyx/pipeline/resume.py:53
+#: src/polyx/pipeline/resume.py:331
+#, python-format
+msgid "the committed checkpoint at %(path)s holds no callback state"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:350
+#, python-format
+msgid "the committed checkpoint at %(path)s holds no %(callback)s state"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:396
+#, python-format
+msgid "the committed checkpoint at %(path)s records no early-stopping state"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:78
 #, python-format
 msgid "cannot read the Lightning checkpoint at %(path)s: %(reason)s"
 msgstr ""
 
-#: src/polyx/pipeline/resume.py:134
+#: src/polyx/pipeline/resume.py:159
 #, python-format
 msgid "cannot read the committed Lightning checkpoint at %(path)s with restricted loading: %(reason)s"
 msgstr ""

@@ -66,6 +66,24 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `gh attestation verify` — with the pre-release rule stated once.
 
 ### Changed
+- **Recovery reads callback state by recorded identity, not key spelling
+  (#249 review).** Every checkpoint now states its recovery layout version,
+  the exact `state_key` of the checkpoint and early-stopping callbacks, and the
+  execution root it was written in. Recovery finds each callback through that
+  record, with explicit fallback spellings for older checkpoints, and refuses a
+  missing or ambiguous state. The early-stopping reason is normalised across the
+  integer, boolean, enum-name and enum-value forms; an unrecognised reason is
+  refused instead of being read as stopped or running, and a checkpoint from a
+  newer layout version is refused. A moved execution now resolves its winner
+  from the recorded execution root, so a structurally similar external path is
+  refused even when its directory names match.
+- **Mask R-CNN exports state their format (#249 review).** A native export
+  carries its format, layout version and class count, which select the loading
+  branch explicitly: native heads are resized from the recorded count and then
+  restore their own state dict, while a stock torchvision checkpoint is
+  transferred before the heads are replaced. An unmarked checkpoint whose head
+  rows happen to match the dataset's class count is ambiguous and refused
+  rather than guessed at.
 - **Resume is bound to one execution and loads checkpoints restrictively (#241).**
   Every execution now writes `execution_identity.json` and embeds the same
   record in every Lightning checkpoint: resolved family (name, framework, task

@@ -33,6 +33,7 @@ from polyx.pipeline.evaluation import SharedEvaluator
 from polyx.pipeline.identity import IDENTITY_KEY, ExecutionIdentity
 from polyx.pipeline.resume import (
     RECOVERY_KEY,
+    RECOVERY_VERSION,
     RecoveryState,
     checkpoint_epoch,
     checkpoint_name_epoch,
@@ -364,9 +365,25 @@ class PolyxModule:
         fit are the engine's, so they travel in the same file. One identity
         record covers the family, initialization weights, protocol and dataset
         fingerprint, and a checkpoint without it is refused as legacy.
+
+        The exact callback state keys and the execution root are recorded too:
+        recovery then finds each callback by the identity it was saved under
+        instead of parsing a generated key, and a moved execution resolves its
+        winner from a recorded relative position instead of a similar-looking
+        absolute path.
         """
+        from lightning.pytorch.callbacks import EarlyStopping
+
+        early = _find_callback(self.trainer, EarlyStopping)
+        kept = self.trainer.checkpoint_callback
         checkpoint[RECOVERY_KEY] = {
+            "version": RECOVERY_VERSION,
             IDENTITY_KEY: self.recorder.identity.to_dict(),
+            "execution_root": str(self.recorder.layout.root),
+            "callbacks": {
+                "model_checkpoint": str(getattr(kept, "state_key", "") or ""),
+                "early_stopping": str(getattr(early, "state_key", "") or ""),
+            },
             "fit": self.recorder.fit,
         }
 

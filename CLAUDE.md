@@ -767,13 +767,12 @@ training wrapper are untouched by this path.
   Lightning checkpoint embeds the same record, so a resume compares the
   requested execution against the checkpoint that would be restored and
   refuses any mismatch by field. Files a checkpoint references resolve inside
-  that execution's own `checkpoints/lightning/` directory, and the reference
-  is verified before its file name is looked up: Lightning stores an absolute
-  `best_model_path`, so a moved execution's stale prefix is accepted only
-  when it is that same position in another checkout
-  (`…/checkpoints/lightning/<name>`) and the recorded directory no longer
-  exists; any other path is refused, even when a file of the same name exists
-  locally.
+  that execution's own `checkpoints/lightning/` directory. Lightning stores an
+  absolute `best_model_path`, so the checkpoint records the execution root it
+  was written in and the winner is resolved from that recorded relative
+  position: a moved execution keeps working, and a path from anywhere else is
+  refused even when its directory names match or a file of the same name
+  exists locally.
   Saved audit findings are stable codes plus parameters, never
   translated prose. `training_state.json` is published before the metrics it
   accompanies and `completion.json` atomically last, after the final log line; a
@@ -792,9 +791,17 @@ training wrapper are untouched by this path.
   epoch progress and both callbacks' state (patience and the kept best). That
   checkpoint is the one authority for completed epochs, the kept checkpoint and
   its score, and whether early stopping already fired. It also carries a
-  `polyx_recovery` block with the execution identity above and the resolved fit
-  (precision that ran, device, verified weights, augmentation), so an execution
-  whose progress record is missing or one epoch behind is still resumable. A
+  `polyx_recovery` block with the execution identity above, the resolved fit
+  (precision that ran, device, verified weights, augmentation), the exact
+  callback state keys Lightning used and the execution root it was written in,
+  so an execution whose progress record is missing or one epoch behind is still
+  resumable. The block states its layout version: a checkpoint from a newer
+  engine is refused, not read with rules it did not follow. Callback state is
+  found by the recorded key, with explicit fallback spellings when an older
+  checkpoint carries none; a missing or ambiguous state is refused. The
+  early-stopping reason is normalised across the integer, boolean, enum-name
+  and enum-value forms Lightning may serialise; an unrecognised or missing
+  reason is refused instead of being read as stopped or running. A
   committed early stop is a finish condition: the resumed job publishes the
   winner without another fit. A committed state that names no winner, or names
   a file that is gone, fails by name instead of substituting another epoch.
@@ -915,13 +922,17 @@ python -m polyx.pipeline.heldout --execution runs_train/benchmark/mask_rcnn \
   `--output`. Writing inside the execution directory is refused.
 - The families with an inference path are Ultralytics detection and
   segmentation (`YOLO.predict` plus the shared COCO converters) and torchvision
-  Mask R-CNN. A Mask R-CNN export holds only `state_dict` and `epoch`, so the
-  detector is rebuilt from the three facts it does not carry — `family.weights`,
-  the cohort's class count and `protocol.image_size` — and the heads are
-  resized for the dataset *before* the state dict is loaded, because the export's
-  heads already have `class_count + 1` rows and torchvision rejects the
-  mismatch. It predicts one image at a time, as validation does, and converts
-  through the same helper. A framework outside that table is refused by name.
+  Mask R-CNN. A Mask R-CNN export is marked with its format, layout version and
+  class count, so the detector is loaded through an explicit branch: a native
+  export has its heads resized from the recorded class count and then restores
+  its own state dict, while a stock torchvision checkpoint is transferred into
+  a stock model before the heads are replaced. The detector is still rebuilt
+  from three facts the state dict does not carry — `family.weights`, the
+  cohort's class count and `protocol.image_size`. An unmarked checkpoint whose
+  head rows happen to equal `class_count + 1` is ambiguous and refused rather
+  than guessed at. It predicts one image at a time, as validation does, and
+  converts through the same helper. A framework outside that table is refused
+  by name.
   An execution without a `completion.json` is refused, so only a frozen
   selected checkpoint is read. The recorded checkpoint path counts only inside
   the execution it came from: a copied tree still carries the original's

@@ -183,11 +183,14 @@ def _write_mask_checkpoint(path: Path, class_count: int) -> None:
     The heads are the adapter's own: ``class_count + 1`` rows because
     torchvision reserves label 0 for background. A rebuild that loads this
     into a stock 91-class detector is the size mismatch the held-out path must
-    not hit.
+    not hit. The format marker is part of the payload: it is what selects the
+    native loading branch.
     """
     import torch
     from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
     from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
+
+    from polyx.pipeline.adapters import MASK_RCNN_FORMAT, MASK_RCNN_FORMAT_VERSION
 
     classes = class_count + 1
     state: dict[str, torch.Tensor] = {}
@@ -197,7 +200,16 @@ def _write_mask_checkpoint(path: Path, class_count: int) -> None:
     ):
         state.update({f"{prefix}{name}": value for name, value in module.state_dict().items()})
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"state_dict": state, "epoch": 0}, path)
+    torch.save(
+        {
+            "format": MASK_RCNN_FORMAT,
+            "version": MASK_RCNN_FORMAT_VERSION,
+            "class_count": class_count,
+            "state_dict": state,
+            "epoch": 0,
+        },
+        path,
+    )
 
 
 # ── Cohorts and predictions ────────────────────────────────────────────────

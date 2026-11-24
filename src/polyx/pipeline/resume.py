@@ -33,8 +33,33 @@ from polyx.pipeline.identity import IDENTITY_KEY, ExecutionIdentity
 #: Top-level key of the engine's recovery facts inside a Lightning checkpoint.
 RECOVERY_KEY = "polyx_recovery"
 
+#: Layout of the recovery block. Version 1 stored the identity and fit without
+#: callback keys or the execution root; version 2 adds both, so recovery no
+#: longer depends on Lightning's generated callback key spelling or on guessing
+#: where a moved execution used to live. A checkpoint from a newer version is
+#: refused rather than read with rules it did not follow.
+RECOVERY_VERSION = 2
+
 #: Epoch-named Lightning checkpoints: ``checkpoint_007.ckpt``.
 _EPOCH_CHECKPOINT = re.compile(r"^checkpoint_(\d+)\.ckpt$")
+
+#: Roles of the callbacks recovery reads, keyed by the name stored in the
+#: recovery block beside the exact ``state_key`` Lightning used.
+_CALLBACK_CLASSES = {"model_checkpoint": "ModelCheckpoint", "early_stopping": "EarlyStopping"}
+
+#: Every stopping reason Lightning defines, by enum name. Value 0 means the
+#: loop did not stop; the rest mean it did. A name or code outside this map is
+#: not guessed at.
+_STOPPING_REASONS = {
+    "NOT_STOPPED": False,
+    "STOPPING_THRESHOLD": True,
+    "DIVERGENCE_THRESHOLD": True,
+    "PATIENCE_EXHAUSTED": True,
+    "NON_FINITE_METRIC": True,
+}
+
+#: The same reasons by the integer value Lightning serialises.
+_STOPPING_CODES = {0: False, 1: True, 2: True, 3: True, 4: True}
 
 
 def checkpoint_epoch(path: Path) -> int:
@@ -146,11 +171,21 @@ def load_recovery(
         )
 
     metadata = saved.get(RECOVERY_KEY)
-    identity = (
-        ExecutionIdentity.from_dict(metadata.get(IDENTITY_KEY))
-        if isinstance(metadata, dict)
-        else None
-    )
+    if not isinstance(metadata, dict):
+        metadata = {}
+    version = metadata.get("version", 1)
+    if not isinstance(version, int) or not 1 <= version <= RECOVERY_VERSION:
+        raise PipelineError(
+            "resume.version_unknown",
+            N_(
+                "cannot resume %(path)s: its committed checkpoint uses recovery layout "
+                "%(version)s, and this engine reads up to %(supported)s"
+            ),
+            path=str(path),
+            version=str(version),
+            supported=RECOVERY_VERSION,
+        )
+    identity = ExecutionIdentity.from_dict(metadata.get(IDENTITY_KEY))
     if identity is None:
         raise PipelineError(
             "execution.identity_unrecorded",
@@ -163,8 +198,8 @@ def load_recovery(
             checkpoint=str(path),
         )
 
-    model = _callback_state(saved, "ModelCheckpoint", path)
-    early = _callback_state(saved, "EarlyStopping", path)
+    model = _callback_state(saved, "model_checkpoint", metadata, path)
+    early = _callback_state(saved, "early_stopping", metadata, path)
     named = model.get("best_model_path")
     if not named:
         raise PipelineError(
@@ -172,7 +207,14 @@ def load_recovery(
             N_("the committed state at %(path)s names no best checkpoint to publish"),
             path=str(path),
         )
-    best = _local_checkpoint(str(named), directory, path)
+    recorded_root = metadata.get("execution_root")
+    best = _best_checkpoint(
+        str(named),
+        directory=directory,
+        root=execution_root,
+        recorded_root=Path(str(recorded_root)) if recorded_root else None,
+        checkpoint=path,
+    )
     fit = metadata.get("fit") if isinstance(metadata, dict) else None
     return RecoveryState(
         checkpoint=path,
@@ -180,7 +222,7 @@ def load_recovery(
         best_checkpoint=best,
         best_score=_number(model.get("best_model_score")),
         best_epoch=checkpoint_epoch(best),
-        stopped_early=_reason_stopped(early.get("stopping_reason")),
+        stopped_early=_stopping_state(early, path),
         wait_count=int(early.get("wait_count", 0) or 0),
         identity=identity,
         fit=fit if isinstance(fit, dict) else None,
@@ -205,20 +247,28 @@ def _committed_checkpoint_path(layout: ArtifactLayout) -> Path | None:
     return max(epochs)[1]
 
 
-def _local_checkpoint(named: str, directory: Path, checkpoint: Path) -> Path:
-    """Resolve a recorded checkpoint reference inside the execution's directory.
+def _best_checkpoint(
+    named: str,
+    *,
+    directory: Path,
+    root: Path,
+    recorded_root: Path | None,
+    checkpoint: Path,
+) -> Path:
+    """Resolve a recorded winner inside this execution, or refuse.
 
-    Lightning records an absolute path at save time. The reference must name a
-    file in this execution's own ``checkpoints/lightning`` directory: a path
-    anywhere else is refused, even when a file of the same name happens to
-    exist here, because the record would then be describing another
-    execution's state. An execution moved to another node keeps that same
-    position in the tree and its old directory is gone, so exactly that shape
-    is accepted and resolved to the local file.
+    Lightning records an absolute path at save time. The reference is accepted
+    only when the file it names belongs to this execution: either it is already
+    inside this execution's root, or the checkpoint records the execution root
+    it was written in and the same relative position resolves inside this one.
+    That is how a moved execution keeps working without trusting a path that
+    merely looks similar. A name that happens to exist here is never used to
+    rescue a reference from somewhere else.
     """
     recorded = Path(named)
-    name = recorded.name
-    if not name or not (_EPOCH_CHECKPOINT.match(name) or name == "last.ckpt"):
+    if not recorded.is_absolute():
+        recorded = root / recorded
+    if not (_EPOCH_CHECKPOINT.match(recorded.name) or recorded.name == "last.ckpt"):
         raise PipelineError(
             "resume.checkpoint_name_invalid",
             N_(
@@ -228,56 +278,97 @@ def _local_checkpoint(named: str, directory: Path, checkpoint: Path) -> Path:
             state=str(checkpoint),
             checkpoint=str(recorded),
         )
-    if recorded.parent != directory and not _relocated(recorded.parent, directory):
-        raise PipelineError(
-            "resume.checkpoint_outside",
-            N_(
-                "the checkpoint %(checkpoint)s named by %(state)s is outside this "
-                "execution's checkpoint directory %(directory)s"
-            ),
-            checkpoint=str(recorded),
-            state=str(checkpoint),
-            directory=str(directory),
-        )
-    candidate = directory / name
-    if not candidate.is_file():
+    if _inside(recorded, root) and recorded.is_file():
+        return recorded.resolve()
+    if recorded_root is not None and _inside(recorded, recorded_root):
+        candidate = root / recorded.relative_to(recorded_root)
+        if _inside(candidate, root) and candidate.is_file():
+            return candidate.resolve()
         raise PipelineError(
             "resume.checkpoint_missing",
             N_("the best checkpoint named by the committed state is missing: %(checkpoint)s"),
             checkpoint=str(candidate),
         )
-    return candidate
-
-
-def _relocated(recorded_parent: Path, directory: Path) -> bool:
-    """Whether a recorded directory is this one before the execution moved.
-
-    Lightning writes the absolute path of the moment it saved. A moved tree
-    therefore carries the old prefix, which is this directory's position in
-    another checkout — same name, same parent name — and which no longer
-    exists. A path that still exists is a live directory that is not this
-    execution's checkpoint directory, so the record describes another tree.
-    """
-    return (
-        recorded_parent.name == directory.name
-        and recorded_parent.parent.name == directory.parent.name
-        and not recorded_parent.exists()
-    )
-
-
-def _callback_state(saved: dict[str, Any], prefix: str, path: Path) -> dict[str, Any]:
-    """One callback's state as Lightning serialised it inside the checkpoint."""
-    callbacks = saved.get("callbacks")
-    if isinstance(callbacks, dict):
-        for key, value in callbacks.items():
-            if str(key).startswith(prefix) and isinstance(value, dict):
-                return value
+    if recorded.parent == directory and (directory / recorded.name).is_file():
+        return (directory / recorded.name).resolve()
     raise PipelineError(
-        "resume.callback_unrecorded",
-        N_("the committed checkpoint at %(path)s holds no %(callback)s state"),
-        path=str(path),
-        callback=prefix,
+        "resume.checkpoint_outside",
+        N_(
+            "the checkpoint %(checkpoint)s named by %(state)s is outside this "
+            "execution's checkpoint directory %(directory)s"
+        ),
+        checkpoint=str(recorded),
+        state=str(checkpoint),
+        directory=str(directory),
     )
+
+
+def _inside(path: Path, root: Path) -> bool:
+    """Whether ``path`` resolves inside ``root``."""
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def _callback_state(
+    saved: dict[str, Any],
+    role: str,
+    metadata: dict[str, Any],
+    path: Path,
+) -> dict[str, Any]:
+    """One callback's state, resolved by the identity the engine recorded.
+
+    The exact ``state_key`` Lightning used is stored beside the recovery facts,
+    so a rename of the generated key does not move the state out of reach. A
+    checkpoint without that record is read through the explicit forms Lightning
+    is known to have written; several matches are ambiguous and refused.
+    """
+    callbacks = saved.get("callbacks")
+    if not isinstance(callbacks, dict):
+        raise PipelineError(
+            "resume.callback_unrecorded",
+            N_("the committed checkpoint at %(path)s holds no callback state"),
+            path=str(path),
+        )
+    recorded = metadata.get("callbacks")
+    if isinstance(recorded, dict):
+        key = recorded.get(role)
+        if isinstance(key, str) and isinstance(callbacks.get(key), dict):
+            return callbacks[key]
+    class_name = _CALLBACK_CLASSES[role]
+    matches = [
+        value
+        for key, value in callbacks.items()
+        if isinstance(value, dict) and _callback_key_matches(str(key), class_name)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise PipelineError(
+            "resume.callback_unrecorded",
+            N_("the committed checkpoint at %(path)s holds no %(callback)s state"),
+            path=str(path),
+            callback=class_name,
+        )
+    raise PipelineError(
+        "resume.callback_ambiguous",
+        N_(
+            "the committed checkpoint at %(path)s holds more than one %(callback)s "
+            "state, so recovery cannot choose which one to use"
+        ),
+        path=str(path),
+        callback=class_name,
+    )
+
+
+def _callback_key_matches(key: str, class_name: str) -> bool:
+    """Whether a serialised callback key belongs to ``class_name``."""
+    if key == class_name:
+        return True
+    if key.startswith(f"{class_name}{{") or key.startswith(f"{class_name}["):
+        return True
+    return key.rsplit(".", 1)[-1].startswith(class_name)
 
 
 def _number(value: Any) -> float | None:
@@ -290,18 +381,57 @@ def _number(value: Any) -> float | None:
         return None
 
 
-def _reason_stopped(reason: Any) -> bool:
-    """Whether a serialised ``EarlyStoppingReason`` means the loop stopped.
+def _stopping_state(early: dict[str, Any], path: Path) -> bool:
+    """Whether the serialised early-stopping state says the loop stopped.
 
-    Lightning stores the enum's value (``0`` is ``NOT_STOPPED``); the name and
-    boolean spellings are accepted so a hand-inspected checkpoint reads the
-    same way.
+    Lightning stores the reason as the enum's integer value, but a checkpoint
+    can also carry the enum name, an enum-like object or a boolean. Every one
+    of those is normalised against the reasons Lightning defines; a missing or
+    unrecognised state is refused instead of being read as "stopped" or
+    "running", either of which would change how the resumed run finishes.
     """
-    if isinstance(reason, bool):
-        return reason
-    if isinstance(reason, str):
-        return reason not in {"", "0", "NOT_STOPPED", "EarlyStoppingReason.NOT_STOPPED"}
-    try:
-        return int(reason) != 0
-    except (TypeError, ValueError):
-        return bool(reason)
+    if "stopping_reason" not in early:
+        raise PipelineError(
+            "resume.stopping_unrecorded",
+            N_("the committed checkpoint at %(path)s records no early-stopping state"),
+            path=str(path),
+        )
+    return _stopping_value(early["stopping_reason"], path)
+
+
+def _stopping_value(value: Any, path: Path) -> bool:
+    """Normalise one stopping-reason spelling, refusing what is not known."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        if value in _STOPPING_CODES:
+            return _STOPPING_CODES[value]
+        raise _unknown_stopping(value, path)
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            return _stopping_value(int(text), path)
+        name = text.rsplit(".", 1)[-1].strip().upper()
+        if name in _STOPPING_REASONS:
+            return _STOPPING_REASONS[name]
+        raise _unknown_stopping(value, path)
+    name = getattr(value, "name", None)
+    if isinstance(name, str):
+        return _stopping_value(name, path)
+    number = getattr(value, "value", None)
+    if isinstance(number, int) and not isinstance(number, bool):
+        return _stopping_value(number, path)
+    raise _unknown_stopping(value, path)
+
+
+def _unknown_stopping(value: Any, path: Path) -> PipelineError:
+    """The refusal for a stopping reason this engine does not recognise."""
+    return PipelineError(
+        "resume.stopping_unknown",
+        N_(
+            "the committed checkpoint at %(path)s records an early-stopping state "
+            "%(value)s that this engine does not recognise"
+        ),
+        path=str(path),
+        value=repr(value),
+    )
