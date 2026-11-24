@@ -14,6 +14,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tests.conftest import split_dataset, write_image
@@ -91,6 +92,111 @@ def _install_fakes(
     cls.sources = []
     cls.calls = []
     monkeypatch.setattr(ultralytics, "YOLO", cls)
+
+
+# ── torchvision doubles that stand in for a frozen Mask R-CNN ──────────────
+
+
+def _mask_outputs(detections: list[dict], image: object) -> dict:
+    """One image's torchvision inference dict, shaped like Mask R-CNN's."""
+    import torch
+
+    from polyx.pipeline.evaluation import rasterize_segmentation
+
+    height, width = int(image.shape[-2]), int(image.shape[-1])  # type: ignore[attr-defined]
+    boxes = torch.tensor([item["xyxy"] for item in detections], dtype=torch.float32).reshape(-1, 4)
+    labels = torch.tensor([item["class_id"] + 1 for item in detections], dtype=torch.int64)
+    scores = torch.tensor([item["score"] for item in detections], dtype=torch.float32)
+    masks = [
+        torch.from_numpy(
+            rasterize_segmentation([item["polygon"]], width, height).astype(np.float32)
+        )
+        for item in detections
+    ]
+    stacked = torch.stack(masks).unsqueeze(1) if masks else torch.zeros((0, 1, height, width))
+    return {"boxes": boxes, "labels": labels, "scores": scores, "masks": stacked}
+
+
+class _HeldOutMaskDetector:
+    """Torchvision factory stand-in for the held-out inference path.
+
+    The factory hands back a stock-shaped detector: torchvision sizes its own
+    heads for COCO's 91 classes, and rebuilding for the execution's dataset has
+    to replace them. The stand-in records the call arguments and how many
+    images each forward pass received, so a test can prove the cohort and the
+    one-image-at-a-time policy without reading private state.
+    """
+
+    prediction_sets: list[list[dict]] = []
+    instances: list[object] = []
+    factory_calls: list[dict] = []
+    inference_batch_sizes: list[int] = []
+
+    @classmethod
+    def build(cls) -> object:
+        import torch
+
+        class _Detector(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                # Stock torchvision heads: a module tree with COCO's 91-class
+                # output layers, replaced for the dataset when rebuilt.
+                self.roi_heads = torch.nn.Module()
+                self.roi_heads.box_predictor = torch.nn.Module()
+                self.roi_heads.box_predictor.cls_score = torch.nn.Linear(8, 91)
+                self.roi_heads.box_predictor.bbox_pred = torch.nn.Linear(8, 364)
+                self.roi_heads.mask_predictor = torch.nn.Module()
+                self.roi_heads.mask_predictor.conv5_mask = torch.nn.Conv2d(8, 256, 3)
+                self.roi_heads.mask_predictor.mask_fcn_logits = torch.nn.Conv2d(256, 91, 1)
+                _HeldOutMaskDetector.instances.append(self)
+
+            def forward(self, images: list, targets: list | None = None) -> object:
+                _HeldOutMaskDetector.inference_batch_sizes.append(len(images))
+                return [
+                    _mask_outputs(_HeldOutMaskDetector.prediction_sets.pop(0), image)
+                    for image in images
+                ]
+
+        return _Detector()
+
+
+def _install_mask_fakes(monkeypatch: pytest.MonkeyPatch, prediction_sets: list[list[dict]]) -> None:
+    """Replace only the torchvision factory; the conversion and evaluator run."""
+    import torchvision.models.detection
+
+    _HeldOutMaskDetector.prediction_sets = list(prediction_sets)
+    _HeldOutMaskDetector.instances = []
+    _HeldOutMaskDetector.factory_calls = []
+    _HeldOutMaskDetector.inference_batch_sizes = []
+
+    def factory(**kwargs: object) -> object:
+        _HeldOutMaskDetector.factory_calls.append(kwargs)
+        return _HeldOutMaskDetector.build()
+
+    monkeypatch.setattr(torchvision.models.detection, "maskrcnn_resnet50_fpn_v2", factory)
+
+
+def _write_mask_checkpoint(path: Path, class_count: int) -> None:
+    """The payload ``_MaskModule.export_native`` writes, with real head shapes.
+
+    The heads are the adapter's own: ``class_count + 1`` rows because
+    torchvision reserves label 0 for background. A rebuild that loads this
+    into a stock 91-class detector is the size mismatch the held-out path must
+    not hit.
+    """
+    import torch
+    from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+    from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
+
+    classes = class_count + 1
+    state: dict[str, torch.Tensor] = {}
+    for prefix, module in (
+        ("roi_heads.box_predictor.", FastRCNNPredictor(8, classes)),
+        ("roi_heads.mask_predictor.", MaskRCNNPredictor(8, 256, classes)),
+    ):
+        state.update({f"{prefix}{name}": value for name, value in module.state_dict().items()})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({"state_dict": state, "epoch": 0}, path)
 
 
 # ── Cohorts and predictions ────────────────────────────────────────────────
@@ -299,6 +405,48 @@ def _import_seg_store(tmp_path: Path) -> Path:
     return dataset_root / "mask_batch" / "v1"
 
 
+def _finished_mask_execution(tmp_path: Path, store: Path) -> Path:
+    """The artifacts a completed Mask R-CNN execution leaves, without a fit.
+
+    Held-out scoring is the subject here, not the training loop (covered by
+    ``test_pipeline_mask_rcnn``): the record, the declaration and the native
+    checkpoint are written through the pipeline's own serialisers and the
+    family's own export shape, so the action reads a real layout.
+    """
+    from polyx.pipeline.artifacts import write_json, write_yaml
+    from polyx.pipeline.config import config_to_dict, load_config, protocol_to_dict
+
+    output = tmp_path / "executions" / "mask_rcnn"
+    (output / "checkpoints").mkdir(parents=True)
+    config = load_config(
+        [
+            f"coco_dataset={store}",
+            f"output_dir={output}",
+            f"scratch_dir={tmp_path / 'scratch'}",
+            "family=mask_rcnn",
+        ]
+    )
+    write_yaml(config_to_dict(config), output / "config.yaml")
+    write_yaml(protocol_to_dict(config), output / "resolved_protocol.yaml")
+    best = output / "checkpoints" / "best.pt"
+    _write_mask_checkpoint(best, len(NAMES))
+    write_json(
+        {
+            "status": "completed",
+            "protocol": protocol_to_dict(config),
+            "dataset_fingerprint": "mask-execution-fingerprint",
+            "family": asdict(config.family),
+            "backend": asdict(config.backend),
+            "selected_epoch": 0,
+            "selection": {"metric": "with_class_score", "value": 0.0},
+            "checkpoint": str(best),
+            "epochs_completed": 1,
+        },
+        output / "completion.json",
+    )
+    return output
+
+
 def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -477,13 +625,13 @@ def test_an_unfinished_execution_is_refused(
     assert _snapshot(execution) == before
 
 
-def test_a_non_ultralytics_family_is_refused(
+def test_a_family_without_an_inference_path_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Mask R-CNN belongs to its own ticket; the action says so by name."""
+    """A framework the action cannot predict from is named, not guessed at."""
     from polyx.pipeline.artifacts import write_json
 
-    execution = tmp_path / "executions" / "mask-rcnn"
+    execution = tmp_path / "executions" / "mmdetection"
     (execution / "checkpoints").mkdir(parents=True)
     best = execution / "checkpoints" / "best.pt"
     best.write_bytes(b"frozen-checkpoint")
@@ -492,11 +640,11 @@ def test_a_non_ultralytics_family_is_refused(
             "status": "completed",
             "protocol": {"split": "val", "confidence": 0.25, "image_size": 1280},
             "family": {
-                "name": "mask_rcnn",
-                "framework": "torchvision",
-                "weights": "maskrcnn_resnet50_fpn_v2",
+                "name": "mmdet_mask",
+                "framework": "mmdetection",
+                "weights": "some_factory",
                 "task": "segment",
-                "run_name": "mask_rcnn",
+                "run_name": "mmdet_mask",
             },
             "selected_epoch": 0,
             "selection": {"metric": "with_class_score", "value": 0.5},
@@ -506,14 +654,15 @@ def test_a_non_ultralytics_family_is_refused(
         execution / "completion.json",
     )
     _install_fakes(monkeypatch, _RecordingYOLO, [])
-    results = tmp_path / "results" / "mask-rcnn"
+    results = tmp_path / "results" / "mmdetection"
 
     code = _heldout(f"--execution={execution}", f"--output={results}")
 
     message = capsys.readouterr().err
     assert code == 1
-    assert "Ultralytics" in message
-    assert "mask_rcnn" in message
+    assert "mmdet_mask" in message
+    assert "mmdetection" in message
+    assert "Mask R-CNN" in message
     assert _RecordingYOLO.instances == []
     assert not results.exists()
 
@@ -549,6 +698,128 @@ def test_yolo_segmentation_reports_the_same_result_shape(
         "images/test/plate_e2.png",
     }
     assert _snapshot(execution) == before
+
+
+def test_a_frozen_mask_rcnn_checkpoint_is_scored_on_the_test_cohort(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The family's own inference path scores the frozen export, once."""
+    store = _import_seg_store(tmp_path)
+    execution = _finished_mask_execution(tmp_path, store)
+    before = _snapshot(execution)
+    _install_mask_fakes(monkeypatch, _perfect_seg_test_predictions())
+    results = tmp_path / "results" / "mask-rcnn"
+
+    code = _heldout(f"--execution={execution}", f"--output={results}")
+
+    assert code == 0, capsys.readouterr().err
+    artifact = _read(results / "heldout_test.json")
+    assert artifact["split"] == "test"
+    assert artifact["task"] == "segment"
+    assert artifact["family"]["name"] == "mask_rcnn"
+    assert artifact["family"]["framework"] == "torchvision"
+    assert artifact["overlap"] == "mask IoU"
+    assert artifact["primary"]["metric"] == "with_class_score"
+    assert artifact["primary"]["value"] == pytest.approx(1.0)
+    assert "held-out test split 'test'" in artifact["primary"]["criterion"]
+
+    # The frozen export was rebuilt at the protocol's image size for the
+    # dataset's classes, and read one image at a time, as validation does.
+    # Two calls, one image each: the two test images and nothing else.
+    call = _HeldOutMaskDetector.factory_calls[-1]
+    assert call["weights"] is None
+    assert call["min_size"] == call["max_size"] == 1280
+    assert len(_HeldOutMaskDetector.inference_batch_sizes) == 2
+    assert set(_HeldOutMaskDetector.inference_batch_sizes) == {1}
+
+    from polyx.core.provenance import sha256_file
+
+    checkpoint = execution / "checkpoints" / "best.pt"
+    assert artifact["checkpoint"]["sha256"] == sha256_file(checkpoint)
+    assert artifact["checkpoint"]["path"] == str(checkpoint)
+    assert artifact["checkpoint"]["selected_epoch"] == 0
+    assert set(artifact["test_cohort"]["hashes"]) == {
+        "dataset.json",
+        "images/test/plate_e1.png",
+        "images/test/plate_e2.png",
+    }
+    assert artifact["test_cohort"]["images"] == 2
+    assert artifact["confidence_threshold"] == 0.25
+    assert artifact["confidence_source"] == "protocol"
+    assert {path.name for path in results.iterdir()} == {
+        "heldout_test.json",
+        "heldout_test.md",
+    }
+
+    # The execution is untouched: no selection, study or completion artifact.
+    assert _snapshot(execution) == before
+
+
+def test_the_mask_rcnn_result_matches_the_ultralytics_result_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both families reach the same artifact contract through one evaluator."""
+    store = _import_seg_store(tmp_path)
+    seg_execution = _finished_segmentation_execution(tmp_path, store)
+    mask_execution = _finished_mask_execution(tmp_path, store)
+    seg_results = tmp_path / "results" / "segmentation"
+    mask_results = tmp_path / "results" / "mask-rcnn"
+
+    _install_fakes(monkeypatch, _RecordingSegYOLO, [_perfect_seg_test_predictions()])
+    assert _heldout(f"--execution={seg_execution}", f"--output={seg_results}") == 0
+    _install_mask_fakes(monkeypatch, _perfect_seg_test_predictions())
+    assert _heldout(f"--execution={mask_execution}", f"--output={mask_results}") == 0, (
+        capsys.readouterr().err
+    )
+
+    seg = _read(seg_results / "heldout_test.json")
+    mask = _read(mask_results / "heldout_test.json")
+
+    # The same record, field for field, with the family as the only variable.
+    assert set(mask) == set(seg)
+    assert set(mask["family"]) == set(seg["family"])
+    assert mask["family"]["framework"] == "torchvision"
+    assert seg["family"]["framework"] == "ultralytics"
+    assert mask["family"]["name"] == "mask_rcnn"
+    assert seg["family"]["name"] == "yolo_segmentation"
+    for key in (
+        "action",
+        "status",
+        "split",
+        "task",
+        "overlap",
+        "confidence_threshold",
+        "confidence_source",
+        "iou_threshold",
+    ):
+        assert mask[key] == seg[key], key
+    assert set(mask["checkpoint"]) == set(seg["checkpoint"])
+    assert set(mask["test_cohort"]) == set(seg["test_cohort"])
+    assert mask["test_cohort"]["fingerprint"] == seg["test_cohort"]["fingerprint"]
+    assert set(mask["primary"]) == set(seg["primary"])
+    assert mask["primary"] == seg["primary"]
+
+    # Same figures, same criteria and the same values: one scoring routine.
+    assert set(mask["evaluation"]) == set(seg["evaluation"])
+    assert set(mask["evaluation"]["figures"]) == set(seg["evaluation"]["figures"])
+    assert set(mask["evaluation"]["per_class"]) == set(seg["evaluation"]["per_class"])
+    for name, figure in seg["evaluation"]["figures"].items():
+        assert mask["evaluation"]["figures"][name]["criterion"] == figure["criterion"], name
+        assert mask["evaluation"]["figures"][name]["value"] == pytest.approx(figure["value"]), name
+    for class_name, figures in seg["evaluation"]["per_class"].items():
+        assert set(mask["evaluation"]["per_class"][class_name]) == set(figures)
+        for name, figure in figures.items():
+            assert mask["evaluation"]["per_class"][class_name][name]["value"] == pytest.approx(
+                figure["value"]
+            )
+
+    # Both reports name the same facts in the same words.
+    mask_report = (mask_results / "heldout_test.md").read_text(encoding="utf-8")
+    seg_report = (seg_results / "heldout_test.md").read_text(encoding="utf-8")
+    assert "# Held-out test evaluation" in seg_report
+    assert "# Held-out test evaluation" in mask_report
+    assert "Overlap rule: mask IoU >= 0.50" in seg_report
+    assert "Overlap rule: mask IoU >= 0.50" in mask_report
 
 
 def _all_keys(value: object) -> list[str]:

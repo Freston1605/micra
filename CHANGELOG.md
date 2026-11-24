@@ -7,6 +7,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Held-out test evaluation of torchvision Mask R-CNN (#243).** The held-out
+  action now scores the torchvision family as well as Ultralytics detection and
+  segmentation: a finished execution's frozen `checkpoints/best.pt` is rebuilt
+  into its detector from `family.weights`, the cohort's class count and
+  `protocol.image_size`, and its predictions go through the family's own
+  inference path into the same `SharedEvaluator`. Both families write the same
+  `heldout_test.json` shape and identifying fields, with the framework as the
+  only difference. The export's heads carry `class_count + 1` rows, so they are
+  resized before the state dict is loaded; a stock pretrained checkpoint is
+  still transferred before its heads are replaced.
 - **Held-out test evaluation (`polyx.pipeline.heldout`, #242).** A finished execution's
   frozen `checkpoints/best.pt` is scored once on the `test` fold through the
   shared evaluator, at one recorded confidence threshold, and the result is its
@@ -14,11 +24,11 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   execution, the checkpoint SHA-256, the test-cohort fingerprint, the threshold,
   the overlap rule and the split. Predictions come from the frozen native
   weights, never from a new Lightning run. The action refuses an unfinished
-  execution and any non-Ultralytics family, never writes the execution's
-  metrics, selection, training state or completion record, and reports
-  `NOT EVALUATED` with a non-zero exit when the dataset declares no test split
-  instead of substituting validation. Documented in the pipeline section of
-  `CLAUDE.md`.
+  execution and any family without an inference path, never writes the
+  execution's metrics, selection, training state or completion record, and
+  reports `NOT EVALUATED` with a non-zero exit when the dataset declares no
+  test split instead of substituting validation. Documented in the pipeline
+  section of `CLAUDE.md`.
 - **Article export (`polyx.gui.report.exportables`).** The report can now hand
   back what a manuscript needs instead of a screenshot of it: every table and
   figure is numbered in the document's language, and each one gets CSV + booktabs

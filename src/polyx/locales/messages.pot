@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 14:12-0300\n"
+"POT-Creation-Date: 2026-11-24 14:19-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -6284,84 +6284,84 @@ msgid ""
 "directory"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:123
+#: src/polyx/pipeline/heldout.py:129
 #, python-format
 msgid "the selected checkpoint of %(path)s is missing: %(checkpoint)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:87
+#: src/polyx/pipeline/heldout.py:93
 #, python-format
 msgid ""
 "held-out evaluation needs a finished training execution: %(path)s has no readable completion "
 "record"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:102
+#: src/polyx/pipeline/heldout.py:108
 #, python-format
 msgid "the execution at %(path)s is incomplete: its completion record names no %(field)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:141
+#: src/polyx/pipeline/heldout.py:147
 #, python-format
 msgid "the execution at %(path)s records no %(kind)s dataset; pass --dataset with the test cohort"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:223
+#: src/polyx/pipeline/heldout.py:229
 #, python-format
 msgid "the test cohort declaration is missing: %(path)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:276
+#: src/polyx/pipeline/heldout.py:320
 #, python-format
 msgid "the confidence threshold must be within [0, 1], got %(value)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:412
+#: src/polyx/pipeline/heldout.py:456
 #, python-format
 msgid "write the held-out result outside %(path)s: the execution is read-only here"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:427
+#: src/polyx/pipeline/heldout.py:471
 #, python-format
 msgid ""
-"held-out evaluation covers only the Ultralytics detection and segmentation families; %(path)s "
-"was produced by %(family)s (%(framework)s)"
+"held-out evaluation covers the Ultralytics detection and segmentation families and the "
+"torchvision Mask R-CNN family; %(path)s was produced by %(family)s (%(framework)s)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:439
+#: src/polyx/pipeline/heldout.py:484
 #, python-format
 msgid "%(path)s already holds a held-out result; pass --force to replace it"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:495
+#: src/polyx/pipeline/heldout.py:541
 msgid "Score a frozen checkpoint on the held-out test cohort"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:501
+#: src/polyx/pipeline/heldout.py:547
 msgid "the finished training execution directory"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:507
+#: src/polyx/pipeline/heldout.py:553
 msgid "where to write heldout_test.json and heldout_test.md"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:513
+#: src/polyx/pipeline/heldout.py:559
 msgid "the test cohort: a YOLO data.yaml or a canonical COCO store; defaults to the execution's dataset"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:522
+#: src/polyx/pipeline/heldout.py:568
 msgid "one fixed confidence threshold (default: the execution's protocol confidence)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:527
+#: src/polyx/pipeline/heldout.py:573
 msgid "the inference device (default: the execution's backend device)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:532
+#: src/polyx/pipeline/heldout.py:578
 msgid "replace an existing held-out result in --output"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:200
+#: src/polyx/pipeline/heldout.py:206
 #, python-format
 msgid "the test cohort of %(path)s is missing %(image)s"
 msgstr ""

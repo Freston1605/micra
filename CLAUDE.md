@@ -857,15 +857,18 @@ training wrapper are untouched by this path.
 `python -m polyx.pipeline.heldout` is the separate step after selection closes:
 it scores one finished execution's frozen `checkpoints/best.pt` on the `test`
 fold through `SharedEvaluator`, at one confidence threshold. Predictions come
-from the frozen native weights (`YOLO.predict` plus the shared COCO converters,
-with the same prediction floor and per-category budget validation uses), never
-from a new Lightning run.
+from the frozen native weights, never from a new Lightning run: each family
+keeps its own inference path and they all hand COCO predictions to the one
+evaluator, with the same prediction floor and per-category budget validation
+uses.
 
 ```bash
 python -m polyx.pipeline.heldout --execution runs_train/benchmark/yolo_detection \
     --output results/heldout/yolo_detection
 python -m polyx.pipeline.heldout --execution runs_train/benchmark/yolo_segmentation \
     --output results/heldout/yolo_segmentation --confidence 0.25
+python -m polyx.pipeline.heldout --execution runs_train/benchmark/mask_rcnn \
+    --output results/heldout/mask_rcnn
 ```
 
 - `--execution` and `--output` are required. `--dataset` names the test cohort
@@ -875,17 +878,26 @@ python -m polyx.pipeline.heldout --execution runs_train/benchmark/yolo_segmentat
   never tuned and no threshold is recommended. `--device` defaults to the
   execution's backend device, and `--force` replaces an earlier result in
   `--output`. Writing inside the execution directory is refused.
-- Only the Ultralytics detection and segmentation families are scored here;
-  Mask R-CNN's native checkpoint is a separate ticket. An execution without a
-  `completion.json` is refused, so only a frozen selected checkpoint is read.
+- The families with an inference path are Ultralytics detection and
+  segmentation (`YOLO.predict` plus the shared COCO converters) and torchvision
+  Mask R-CNN. A Mask R-CNN export holds only `state_dict` and `epoch`, so the
+  detector is rebuilt from the three facts it does not carry — `family.weights`,
+  the cohort's class count and `protocol.image_size` — and the heads are
+  resized for the dataset *before* the state dict is loaded, because the export's
+  heads already have `class_count + 1` rows and torchvision rejects the
+  mismatch. It predicts one image at a time, as validation does, and converts
+  through the same helper. A framework outside that table is refused by name.
+  An execution without a `completion.json` is refused, so only a frozen
+  selected checkpoint is read.
 - The result is its own artifact: `heldout_test.json` plus `heldout_test.md`,
-  naming the source execution, the checkpoint path and SHA-256, the selected
-  epoch, the test-cohort hashes and fingerprint (the `test` fold's images,
-  labels and declaration), the confidence threshold and its source, the
-  class-aware operating-point F1 with localisation and COCO AP beside it, the
-  overlap rule and the split scored. The execution's `metrics.json`,
-  `training_state.json`, `progress.json` and `completion.json` are never
-  written; the execution tree is read-only for this action.
+  naming the source execution, the family and framework, the checkpoint path
+  and SHA-256, the selected epoch, the test-cohort hashes and fingerprint (the
+  `test` fold's images, labels and declaration), the confidence threshold and
+  its source, the class-aware operating-point F1 with localisation and COCO AP
+  beside it, the overlap rule and the split scored. Both families write the
+  same record: the framework is the only field that changes. The execution's
+  `metrics.json`, `training_state.json`, `progress.json` and `completion.json`
+  are never written; the execution tree is read-only for this action.
 - A dataset that declares no `test` split is reported as `NOT EVALUATED` on
   stderr with exit status 2. Validation is never substituted: scoring it here
   would quietly turn the held-out cohort into a second validation fold.

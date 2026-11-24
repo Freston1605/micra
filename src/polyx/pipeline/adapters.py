@@ -16,7 +16,7 @@ the headless command never loads a GPU stack.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -360,33 +360,40 @@ def _torchvision_detector(
 
     A pinned, hash-verified checkpoint is loaded from its local path; the
     factory is asked for an untrained model in that case so nothing downloads.
+    Two kinds of checkpoint arrive here, and they are loaded on opposite sides
+    of the head resize: a stock pretrained detector carries its own 91-class
+    heads and is transferred before they are replaced, while this adapter's
+    own export already carries the dataset's heads and is loaded after, or
+    torchvision rejects the class-count mismatch.
     """
-    import torch
     from torchvision.models import detection
-    from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-    from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
     size = {"min_size": int(image_size), "max_size": int(image_size)}
     name = str(weights_name or "").strip().lower()
-    if name in {"", "none", "random"}:
-        model = detection.maskrcnn_resnet50_fpn_v2(weights=None, weights_backbone=None, **size)
+    untrained = name in {"", "none", "random"}
+    if untrained:
+        factory = detection.maskrcnn_resnet50_fpn_v2
     else:
         factory = getattr(detection, name, None)
         if factory is None:
             raise ValueError(f"unsupported torchvision segmentation model: {weights_name}")
-        if weights_path is not None:
-            model = factory(weights=None, weights_backbone=None, **size)
-            state = torch.load(weights_path, map_location="cpu", weights_only=True)
-            if isinstance(state, dict) and "state_dict" in state:
-                state = state["state_dict"]
-            model.load_state_dict(state)
-        else:
-            model = factory(weights="DEFAULT", **size)
-    classes = class_count + 1
-    box_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = FastRCNNPredictor(box_features, classes)
-    mask_features = model.roi_heads.mask_predictor.conv5_mask.in_channels
-    model.roi_heads.mask_predictor = MaskRCNNPredictor(mask_features, 256, classes)
+
+    state = _native_state_dict(weights_path) if weights_path is not None else None
+    if state is None:
+        model = (
+            factory(weights=None, weights_backbone=None, **size)
+            if untrained
+            else factory(weights="DEFAULT", **size)
+        )
+        _resize_heads(model, class_count)
+    elif _head_classes(state) == class_count + 1:
+        model = factory(weights=None, weights_backbone=None, **size)
+        _resize_heads(model, class_count)
+        model.load_state_dict(state)
+    else:
+        model = factory(weights=None, weights_backbone=None, **size)
+        model.load_state_dict(state)
+        _resize_heads(model, class_count)
     # Keep the ranked tail for AP, like the YOLO adapter; the shared evaluator
     # applies the protocol's confidence threshold only to the operating point.
     # The 100-detection cap is part of the same collection policy.
@@ -397,6 +404,96 @@ def _torchvision_detector(
     model.roi_heads.detections_per_img = prediction_budget(class_count)
     _install_chunked_mask_postprocess(model)
     return model
+
+
+def _native_state_dict(weights_path: Path) -> dict[str, Any]:
+    """The tensors inside a native export, whether or not it is wrapped."""
+    import torch
+
+    state = torch.load(Path(weights_path), map_location="cpu", weights_only=True)
+    if isinstance(state, dict) and "state_dict" in state:
+        state = state["state_dict"]
+    return state
+
+
+def _head_classes(state: dict[str, Any]) -> int | None:
+    """How many classes a checkpoint's box head was built for, if it says."""
+    weight = state.get("roi_heads.box_predictor.cls_score.weight")
+    shape = getattr(weight, "shape", ())
+    return int(shape[0]) if len(shape) == 2 else None
+
+
+def _resize_heads(model: Any, class_count: int) -> None:
+    """Replace torchvision's stock heads for the dataset's own class count."""
+    from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+    from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
+
+    classes = class_count + 1
+    box_features = model.roi_heads.box_predictor.cls_score.in_features
+    model.roi_heads.box_predictor = FastRCNNPredictor(box_features, classes)
+    mask_features = model.roi_heads.mask_predictor.conv5_mask.in_channels
+    model.roi_heads.mask_predictor = MaskRCNNPredictor(mask_features, 256, classes)
+
+
+def mask_rcnn_predictions(
+    checkpoint: Path,
+    paths: Sequence[Path],
+    *,
+    weights_name: str,
+    class_count: int,
+    image_size: int,
+    device: str = "cpu",
+) -> list[dict]:
+    """Score a frozen Mask R-CNN export on a cohort through torchvision.
+
+    The held-out action has no Lightning run to lean on, so the detector is
+    rebuilt from the three facts its export does not carry -- the factory
+    name, the dataset's class count and the protocol's image size -- and its
+    state dict is loaded into the resized heads.
+
+    Inference is one image at a time, as validation does: every detection's
+    mask is pasted at the original resolution, so a batch of 4K plates would
+    multiply the peak the chunked postprocess exists to bound. The conversion
+    is the helper validation uses, so the shared evaluator remains the one
+    scorer.
+    """
+    import torch
+
+    model = _torchvision_detector(weights_name, class_count, int(image_size), Path(checkpoint))
+    model.to(device)
+    model.eval()
+    predictions: list[dict] = []
+    with torch.no_grad():
+        for image_id, path in enumerate(paths):
+            image = _image_tensor(Path(path)).to(device)
+            outputs = model([image])
+            predictions.extend(coco_segmentation_predictions_from_torchvision(outputs, [image_id]))
+    return predictions
+
+
+def _image_tensor(path: Path) -> Any:
+    """One image as the float CHW tensor torchvision's detectors expect."""
+    import torch
+
+    rgb = _decode_rgb(path)
+    if rgb is None:
+        raise ValueError(f"could not read a COCO image: {path.name}")
+    return torch.from_numpy(np.ascontiguousarray(rgb.transpose(2, 0, 1))).float() / 255.0
+
+
+def _decode_rgb(path: Path) -> np.ndarray | None:
+    """Decode one image as RGB, or ``None`` when it cannot be read.
+
+    ``imread`` fails silently on accented paths on Windows, so the project
+    reads the bytes and hands them to ``imdecode``.
+    """
+    import cv2
+
+    buffer = np.fromfile(path, dtype=np.uint8)
+    image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+    if image is None:
+        return None
+    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
 
 #: How many full-resolution masks the torchvision postprocess may build at
@@ -521,16 +618,13 @@ class _CocoMaskTorchvisionDataset:
         return len(self.images)
 
     def __getitem__(self, index: int) -> tuple[Any, dict[str, Any]]:
-        import cv2
         import torch
 
         record = self.images[index]
         source = self.store / str(record["file_name"])
-        buffer = np.fromfile(source, dtype=np.uint8)
-        image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
-        if image is None:
+        rgb = _decode_rgb(source)
+        if rgb is None:
             raise ValueError(f"could not read a COCO image: {record['file_name']}")
-        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         height, width = rgb.shape[:2]
 
         masks: list[np.ndarray] = []

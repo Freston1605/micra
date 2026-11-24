@@ -16,8 +16,10 @@ Usage:
     python -m polyx.pipeline.heldout --execution <finished execution> \
         --output <result folder> --confidence 0.25 --device cpu
 
-Only the Ultralytics detection and segmentation families are scored here.
-Mask R-CNN is a separate ticket and a different native checkpoint.
+Only families with a native inference path are scored here: the Ultralytics
+detection and segmentation families and the torchvision Mask R-CNN family.
+Each one produces its predictions through its own frozen-weights path and
+hands them to the same evaluator, so the result records the same shape.
 """
 
 from __future__ import annotations
@@ -56,9 +58,13 @@ from polyx.pipeline.evaluation import PREDICTION_FLOOR, SharedEvaluator, predict
 
 #: The one fold this action scores. Validation is never substituted.
 TEST_SPLIT = "test"
-#: The families whose frozen native checkpoint this action can predict from.
-SUPPORTED_FRAMEWORK = "ultralytics"
-SUPPORTED_TASKS = ("detect", "segment")
+#: The families with a native inference path, by framework and the tasks each
+#: one can score here. Mask R-CNN is the torchvision sibling; a framework
+#: outside this table is refused by name.
+SUPPORTED_FAMILIES: dict[str, tuple[str, ...]] = {
+    "ultralytics": ("detect", "segment"),
+    "torchvision": ("segment",),
+}
 #: Artifact names; machine tokens, never translated.
 RESULT_NAME = "heldout_test.json"
 REPORT_NAME = "heldout_test.md"
@@ -227,6 +233,7 @@ def _cohort(dataset: Path, task: str) -> dict[str, Any]:
 
 
 def _predictions(
+    family: dict[str, Any],
     task: str,
     checkpoint: Path,
     paths: list[Path],
@@ -238,10 +245,47 @@ def _predictions(
 ) -> list[dict]:
     """Predict from the frozen native weights, never from a Lightning run.
 
-    Ultralytics owns letterboxing, NMS and polygon decoding. The same low
-    prediction floor and per-category budget the validation path uses are
-    applied here, so the operating point and the ranking tail come from the
-    same candidates.
+    Each family keeps its own inference path; the cohort, the low prediction
+    floor, the per-category budget and the COCO conversion are shared, so the
+    evaluator sees the same candidates it would during validation.
+    """
+    if str(family.get("framework", "")) == "torchvision":
+        from polyx.pipeline.adapters import mask_rcnn_predictions
+
+        return mask_rcnn_predictions(
+            checkpoint,
+            paths,
+            weights_name=str(family.get("weights") or ""),
+            class_count=class_count,
+            image_size=image_size,
+            device=device,
+        )
+    return _ultralytics_predictions(
+        task,
+        checkpoint,
+        paths,
+        image_size=image_size,
+        class_count=class_count,
+        device=device,
+        batch=batch,
+    )
+
+
+def _ultralytics_predictions(
+    task: str,
+    checkpoint: Path,
+    paths: list[Path],
+    *,
+    image_size: int,
+    class_count: int,
+    device: str,
+    batch: int,
+) -> list[dict]:
+    """Ultralytics owns letterboxing, NMS and polygon decoding here.
+
+    The same low prediction floor and per-category budget the validation path
+    uses are applied, so the operating point and the ranking tail come from
+    the same candidates.
     """
     from ultralytics import YOLO
 
@@ -300,7 +344,7 @@ def _artifact(
         "source_execution": str(execution),
         "family": {
             "name": str(family.get("name", "")),
-            "framework": SUPPORTED_FRAMEWORK,
+            "framework": str(family.get("framework", "")),
             "task": task,
         },
         "split": TEST_SPLIT,
@@ -421,12 +465,13 @@ def evaluate_heldout(
         protocol = {}
     framework = str(family.get("framework", ""))
     task = str(family.get("task", ""))
-    if framework != SUPPORTED_FRAMEWORK or task not in SUPPORTED_TASKS:
+    if task not in SUPPORTED_FAMILIES.get(framework, ()):
         raise PipelineError(
             "heldout.family_unsupported",
             N_(
-                "held-out evaluation covers only the Ultralytics detection and "
-                "segmentation families; %(path)s was produced by %(family)s (%(framework)s)"
+                "held-out evaluation covers the Ultralytics detection and "
+                "segmentation families and the torchvision Mask R-CNN family; "
+                "%(path)s was produced by %(family)s (%(framework)s)"
             ),
             path=str(execution),
             family=str(family.get("name", "unknown")),
@@ -454,6 +499,7 @@ def evaluate_heldout(
     requested_batch = int(protocol.get("batch", 8) or 1)
     batch = max(1, min(requested_batch, len(cohort["paths"])))
     predictions = _predictions(
+        family,
         task,
         checkpoint,
         cohort["paths"],

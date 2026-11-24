@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Poly-X\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 14:12-0300\n"
+"POT-Creation-Date: 2026-11-24 14:19-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -6878,12 +6878,12 @@ msgstr ""
 "%(path)s ya contiene una ejecución; pase resume=true para continuarla o elija un directorio de "
 "salida nuevo"
 
-#: src/polyx/pipeline/heldout.py:123
+#: src/polyx/pipeline/heldout.py:129
 #, python-format
 msgid "the selected checkpoint of %(path)s is missing: %(checkpoint)s"
 msgstr "falta el checkpoint seleccionado de %(path)s: %(checkpoint)s"
 
-#: src/polyx/pipeline/heldout.py:87
+#: src/polyx/pipeline/heldout.py:93
 #, python-format
 msgid ""
 "held-out evaluation needs a finished training execution: %(path)s has no readable completion "
@@ -6892,78 +6892,79 @@ msgstr ""
 "la evaluación de la cohorte de prueba retenida necesita una ejecución de entrenamiento "
 "terminada: %(path)s no tiene un registro de finalización legible"
 
-#: src/polyx/pipeline/heldout.py:102
+#: src/polyx/pipeline/heldout.py:108
 #, python-format
 msgid "the execution at %(path)s is incomplete: its completion record names no %(field)s"
 msgstr "la ejecución en %(path)s está incompleta: su registro de finalización no indica %(field)s"
 
-#: src/polyx/pipeline/heldout.py:141
+#: src/polyx/pipeline/heldout.py:147
 #, python-format
 msgid "the execution at %(path)s records no %(kind)s dataset; pass --dataset with the test cohort"
 msgstr "la ejecución en %(path)s no registra un dataset %(kind)s; pase --dataset con la cohorte de prueba"
 
-#: src/polyx/pipeline/heldout.py:223
+#: src/polyx/pipeline/heldout.py:229
 #, python-format
 msgid "the test cohort declaration is missing: %(path)s"
 msgstr "falta la declaración de la cohorte de prueba: %(path)s"
 
-#: src/polyx/pipeline/heldout.py:276
+#: src/polyx/pipeline/heldout.py:320
 #, python-format
 msgid "the confidence threshold must be within [0, 1], got %(value)s"
 msgstr "el umbral de confianza debe estar dentro de [0, 1], se recibió %(value)s"
 
-#: src/polyx/pipeline/heldout.py:412
+#: src/polyx/pipeline/heldout.py:456
 #, python-format
 msgid "write the held-out result outside %(path)s: the execution is read-only here"
 msgstr ""
 "escriba el resultado de la cohorte retenida fuera de %(path)s: la ejecución es de solo lectura "
 "aquí"
 
-#: src/polyx/pipeline/heldout.py:427
+#: src/polyx/pipeline/heldout.py:471
 #, python-format
 msgid ""
-"held-out evaluation covers only the Ultralytics detection and segmentation families; %(path)s "
-"was produced by %(family)s (%(framework)s)"
+"held-out evaluation covers the Ultralytics detection and segmentation families and the "
+"torchvision Mask R-CNN family; %(path)s was produced by %(family)s (%(framework)s)"
 msgstr ""
-"la evaluación de la cohorte retenida cubre solo las familias de detección y segmentación de "
-"Ultralytics; %(path)s fue producida por %(family)s (%(framework)s)"
+"la evaluación de la cohorte retenida cubre las familias de detección y segmentación de "
+"Ultralytics y la familia Mask R-CNN de torchvision; %(path)s fue producida por %(family)s "
+"(%(framework)s)"
 
-#: src/polyx/pipeline/heldout.py:439
+#: src/polyx/pipeline/heldout.py:484
 #, python-format
 msgid "%(path)s already holds a held-out result; pass --force to replace it"
 msgstr "%(path)s ya contiene un resultado de la cohorte retenida; pase --force para reemplazarlo"
 
-#: src/polyx/pipeline/heldout.py:495
+#: src/polyx/pipeline/heldout.py:541
 msgid "Score a frozen checkpoint on the held-out test cohort"
 msgstr "Puntuar un checkpoint congelado sobre la cohorte de prueba retenida"
 
-#: src/polyx/pipeline/heldout.py:501
+#: src/polyx/pipeline/heldout.py:547
 msgid "the finished training execution directory"
 msgstr "el directorio de la ejecución de entrenamiento terminada"
 
-#: src/polyx/pipeline/heldout.py:507
+#: src/polyx/pipeline/heldout.py:553
 msgid "where to write heldout_test.json and heldout_test.md"
 msgstr "dónde escribir heldout_test.json y heldout_test.md"
 
-#: src/polyx/pipeline/heldout.py:513
+#: src/polyx/pipeline/heldout.py:559
 msgid "the test cohort: a YOLO data.yaml or a canonical COCO store; defaults to the execution's dataset"
 msgstr ""
 "la cohorte de prueba: un data.yaml de YOLO o un almacén COCO canónico; por defecto, el dataset "
 "de la ejecución"
 
-#: src/polyx/pipeline/heldout.py:522
+#: src/polyx/pipeline/heldout.py:568
 msgid "one fixed confidence threshold (default: the execution's protocol confidence)"
 msgstr "un umbral de confianza fijo (por defecto: la confianza del protocolo de la ejecución)"
 
-#: src/polyx/pipeline/heldout.py:527
+#: src/polyx/pipeline/heldout.py:573
 msgid "the inference device (default: the execution's backend device)"
 msgstr "el dispositivo de inferencia (por defecto: el dispositivo del backend de la ejecución)"
 
-#: src/polyx/pipeline/heldout.py:532
+#: src/polyx/pipeline/heldout.py:578
 msgid "replace an existing held-out result in --output"
 msgstr "reemplazar un resultado de la cohorte retenida existente en --output"
 
-#: src/polyx/pipeline/heldout.py:200
+#: src/polyx/pipeline/heldout.py:206
 #, python-format
 msgid "the test cohort of %(path)s is missing %(image)s"
 msgstr "a la cohorte de prueba de %(path)s le falta %(image)s"
