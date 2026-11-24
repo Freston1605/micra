@@ -188,13 +188,14 @@ def test_each_trial_records_its_study_id_and_the_study_identity(
         assert record["execution"] == str(directory)
 
 
-def test_a_trial_with_progress_is_reused_by_its_id(tmp_path: Path) -> None:
+def test_a_trial_with_a_committed_checkpoint_is_reused_by_its_id(tmp_path: Path) -> None:
     """A recorded trial with a checkpoint resumes in the same directory."""
     from polyx.pipeline.sweep_app import _trial_output_dir
 
     trial = tmp_path / "trials" / "trial_003"
-    trial.mkdir(parents=True)
-    (trial / "progress.json").write_text("{}", encoding="utf-8")
+    checkpoint = trial / "checkpoints" / "lightning" / "last.ckpt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"committed")
     assert _trial_output_dir(tmp_path, 3) == trial
 
 

@@ -30,6 +30,12 @@ from typing import Any
 from polyx.pipeline.artifacts import ArtifactLayout, append_log, write_json
 from polyx.pipeline.config import ExecutionConfig, Protocol, protocol_to_dict
 from polyx.pipeline.evaluation import SharedEvaluator
+from polyx.pipeline.resume import (
+    RECOVERY_KEY,
+    RecoveryState,
+    checkpoint_epoch,
+    committed_checkpoint,
+)
 from polyx.pipeline.weights import ResolvedWeights
 
 #: The one metric every family logs and both callbacks monitor.
@@ -158,10 +164,6 @@ class ExecutionRecorder:
     #: The fit state resolved once the trainer exists (precision, device,
     #: verified weights, augmentation); every progress record carries it.
     fit: dict[str, Any] = field(default_factory=dict)
-    #: The kept checkpoint and the epoch it holds, carried across a resume so
-    #: an epoch that does not improve keeps naming the earlier best.
-    best_checkpoint_path: str | None = None
-    best_epoch: int = -1
 
     @property
     def protocol(self) -> Protocol:
@@ -174,16 +176,20 @@ class ExecutionRecorder:
         native_checkpoint: Path | None,
         score: float,
     ) -> None:
-        """Write the progress record after Lightning saved this epoch."""
+        """Write the progress heartbeat after Lightning saved this epoch.
+
+        Every outcome-bearing value is read from the callbacks, which Lightning
+        has just restored from or written into the checkpoint. The heartbeat
+        cannot carry an older winner into a later resume: a resumed process
+        starts from the checkpoint, and this record only reports what it saw.
+        """
         from lightning.pytorch.callbacks import EarlyStopping
 
         checkpoint = trainer.checkpoint_callback
         early = _find_callback(trainer, EarlyStopping)
         best_score = getattr(checkpoint, "best_model_score", None)
-        if checkpoint.best_model_path and checkpoint.best_model_path != self.best_checkpoint_path:
-            # Lightning saved a new best at this validation end.
-            self.best_checkpoint_path = str(checkpoint.best_model_path)
-            self.best_epoch = int(trainer.current_epoch)
+        best_path = getattr(checkpoint, "best_model_path", "") or None
+        best_epoch = checkpoint_epoch(Path(best_path)) if best_path else -1
         progress = {
             "epochs_completed": int(trainer.current_epoch) + 1,
             "epoch_completed": int(trainer.current_epoch),
@@ -191,17 +197,15 @@ class ExecutionRecorder:
             "resume_checkpoint": (
                 str(checkpoint.last_model_path) if checkpoint.last_model_path else None
             ),
-            "best_lightning_checkpoint": (
-                str(checkpoint.best_model_path) if checkpoint.best_model_path else None
-            ),
+            "best_lightning_checkpoint": str(best_path) if best_path else None,
             "best_score": float(best_score) if best_score is not None else None,
-            "best_epoch": self.best_epoch,
+            "best_epoch": best_epoch,
             "protocol": protocol_to_dict(self.config),
             "dataset_fingerprint": self.dataset_fingerprint,
             "fit": self.fit,
             "early_stopping": stopping_record(
                 self.config,
-                best_epoch=self.best_epoch,
+                best_epoch=best_epoch,
                 best_score=float(best_score) if best_score is not None else None,
                 stopped_early=stopped_early(early),
                 wait_count=int(getattr(early, "wait_count", 0)),
@@ -336,6 +340,21 @@ class PolyxModule:
 
         return self.trainer.state.fn is TrainerFn.FITTING
 
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Carry the recovery facts Lightning does not serialise.
+
+        Lightning restores the loop, optimizer, scheduler and both callbacks
+        from the checkpoint it writes. The protocol, dataset identity and the
+        resolved fit are the engine's, so they travel in the same file. A
+        checkpoint whose progress heartbeat is missing or one epoch behind is
+        then still a complete recovery record.
+        """
+        checkpoint[RECOVERY_KEY] = {
+            "protocol": protocol_to_dict(self.recorder.config),
+            "dataset_fingerprint": self.recorder.dataset_fingerprint,
+            "fit": self.recorder.fit,
+        }
+
     def export_native(self, path: Path, epoch: int | None = None) -> None:
         """Write this family's own checkpoint format. Adapters implement it."""
         raise NotImplementedError
@@ -445,7 +464,7 @@ def run_fit(
     resume_checkpoint: Path | None = None,
 ) -> tuple[TrainingOutcome, Any]:
     """Fit one family with Lightning's callbacks doing the selection."""
-    trainer, checkpoint, requested_precision = build_trainer(config, layout)
+    trainer, _checkpoint, requested_precision = build_trainer(config, layout)
     recorder.fit = _fit_metadata(
         config=config,
         trainer=trainer,
@@ -459,51 +478,37 @@ def run_fit(
         fit_kwargs["ckpt_path"] = str(resume_checkpoint)
     trainer.fit(run.module, datamodule=run.datamodule, **fit_kwargs)
     outcome = _outcome(
+        layout=layout,
         trainer=trainer,
-        checkpoint=checkpoint,
         run=run,
         requested_precision=requested_precision,
     )
     return outcome, trainer
 
 
-def recovered_outcome(
-    layout: ArtifactLayout,
-    *,
-    precision: str = "",
-    amp_requested: str = "",
-    device: str = "",
-    weights: str = "",
-    weights_verified: bool = False,
-    augmentation: dict[str, Any] | None = None,
-    epochs_completed: int = 0,
-    best_score: float | None = None,
-    stopped_early: bool = False,
-    wait_count: int = 0,
-) -> TrainingOutcome:
-    """The state of an execution that finished but never published.
+def recovered_outcome(recovery: RecoveryState) -> TrainingOutcome:
+    """The state of an execution whose last epoch Lightning already committed.
 
-    The epoch loop is already on disk; only the artifacts are missing. The
-    progress record names the best Lightning checkpoint the loop kept, and the
-    fit facts travel with it, so publication does not invent a precision or a
-    device it did not observe.
+    The epoch loop is on disk; only the artifacts are missing. Everything that
+    decides the publication comes from the committed checkpoint: how many
+    epochs completed, the kept checkpoint and its score, and the early-stopping
+    decision. The fit facts travel beside them in the same file.
     """
-    best = _recorded_best(layout)
-    epoch = checkpoint_epoch(best)
+    fit = recovery.fit or {}
     return TrainingOutcome(
-        precision=precision,
-        amp_requested=amp_requested,
-        epochs_completed=max(epochs_completed, epoch + 1),
-        amp_active=amp_active(precision),
-        device=device,
-        weights=weights,
-        weights_verified=weights_verified,
-        augmentation=augmentation or {},
-        best_score=best_score,
-        best_checkpoint=best,
-        best_epoch=epoch,
-        stopped_early=stopped_early,
-        wait_count=wait_count,
+        precision=str(fit.get("precision", "")),
+        amp_requested=str(fit.get("amp_requested", "")),
+        epochs_completed=recovery.epochs_completed,
+        amp_active=amp_active(str(fit.get("precision", ""))),
+        device=str(fit.get("device", "")),
+        weights=str(fit.get("weights", "")),
+        weights_verified=bool(fit.get("weights_verified", False)),
+        augmentation=fit.get("augmentation") or {},
+        best_score=recovery.best_score,
+        best_checkpoint=recovery.best_checkpoint,
+        best_epoch=recovery.best_epoch,
+        stopped_early=recovery.stopped_early,
+        wait_count=recovery.wait_count,
     )
 
 
@@ -536,31 +541,6 @@ def evaluate_best(
     return metrics, best
 
 
-def checkpoint_epoch(path: Path) -> int:
-    """The zero-based epoch a Lightning checkpoint holds."""
-    import torch
-
-    loaded = torch.load(path, map_location="cpu", weights_only=False)
-    return int(loaded["epoch"])
-
-
-def _recorded_best(layout: ArtifactLayout) -> Path:
-    """The best Lightning checkpoint named by the progress record."""
-    import json
-
-    try:
-        progress = json.loads(layout.progress.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"cannot read the progress record at {layout.progress}") from exc
-    named = progress.get("best_lightning_checkpoint")
-    if not named:
-        raise RuntimeError("the progress record names no best Lightning checkpoint")
-    path = Path(str(named))
-    if not path.is_file():
-        raise RuntimeError(f"the best Lightning checkpoint named by the record is missing: {path}")
-    return path
-
-
 def _fit_metadata(
     *,
     config: ExecutionConfig,
@@ -586,30 +566,32 @@ def _fit_metadata(
 
 def _outcome(
     *,
+    layout: ArtifactLayout,
     trainer: Any,
-    checkpoint: Any,
     run: FamilyRun,
     requested_precision: str,
 ) -> TrainingOutcome:
-    from lightning.pytorch.callbacks import EarlyStopping
+    """The finished fit, as the checkpoint Lightning just committed describes it.
 
-    early = _find_callback(trainer, EarlyStopping)
-    best_path = Path(str(checkpoint.best_model_path or ""))
-    if not best_path.is_file():
-        raise RuntimeError("the Lightning loop kept no best checkpoint")
-    best_score = checkpoint.best_model_score
+    The callbacks would report the same numbers in memory, but reading the
+    committed file keeps one authority for a fresh fit, a resumed fit and a
+    recovered publication.
+    """
+    recovery = committed_checkpoint(layout.root)
+    if recovery is None:
+        raise RuntimeError("the Lightning loop finished without committing a checkpoint")
     return TrainingOutcome(
         precision=str(trainer.precision),
         amp_requested=requested_precision,
-        epochs_completed=int(trainer.current_epoch),
+        epochs_completed=recovery.epochs_completed,
         amp_active=amp_active(str(trainer.precision)),
         device=run.device,
         weights=run.weights.describe(),
         weights_verified=run.weights.verified,
         augmentation=run.augmentation,
-        best_score=float(best_score) if best_score is not None else None,
-        best_checkpoint=best_path,
-        best_epoch=checkpoint_epoch(best_path),
-        stopped_early=stopped_early(early),
-        wait_count=int(getattr(early, "wait_count", 0)),
+        best_score=recovery.best_score,
+        best_checkpoint=recovery.best_checkpoint,
+        best_epoch=recovery.best_epoch,
+        stopped_early=recovery.stopped_early,
+        wait_count=recovery.wait_count,
     )

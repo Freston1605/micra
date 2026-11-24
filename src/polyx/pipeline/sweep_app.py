@@ -10,9 +10,9 @@ or one import, never a second search loop.
 ``sweep_trial_id``. That is the only accepted identity: parameters and Hydra's
 resettable job index are ambiguous after a preemption. Each trial persists a
 record before training; a resubmission with the same trial id resumes the
-recorded execution when it has a progress snapshot, or retries the same
-parameters in a clean directory when it does not. The resolved study name and
-storage are written once and reused by ``sweep_best``.
+recorded execution when it has a committed Lightning checkpoint, or retries the
+same parameters in a clean directory when it does not. The resolved study name
+and storage are written once and reused by ``sweep_best``.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from polyx.core.i18n import N_
 from polyx.pipeline.artifacts import write_yaml
 from polyx.pipeline.errors import PipelineError
 from polyx.pipeline.optuna_sweeper import install_trial_id_passthrough
+from polyx.pipeline.resume import has_committed_checkpoint
 from polyx.pipeline.sweep_record import (
     acquire_trial_lease,
     release_trial_lease,
@@ -152,13 +153,13 @@ def _sampled_parameters(raw: dict) -> dict[str, Any]:
 def _trial_output_dir(root: Path, trial_id: int) -> Path:
     """The stable execution directory for one study trial id."""
     directory = trial_directory(root, trial_id)
-    if (directory / "progress.json").is_file():
+    if has_committed_checkpoint(directory):
         return directory
     if directory.exists() and not (directory / "completion.json").is_file():
-        # A record without a progress snapshot cannot be resumed; retrying the
-        # same parameters in a clean directory is explicit, not an overwrite of
-        # usable work. A *completed* execution is never deleted: the engine
-        # refuses to reuse it, which is loud instead of destructive.
+        # Nothing on disk can be resumed; retrying the same parameters in a
+        # clean directory is explicit, not an overwrite of usable work. A
+        # *completed* execution is never deleted: the engine refuses to reuse
+        # it, which is loud instead of destructive.
         shutil.rmtree(directory)
     directory.mkdir(parents=True, exist_ok=True)
     return directory

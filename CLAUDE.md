@@ -712,7 +712,7 @@ training wrapper are untouched by this path.
 - One PyTorch Lightning loop trains every family. `lightning_loop.py` builds
   the one `Trainer`, its callbacks and the shared module behaviour
   (`PolyxModule`): optimizer and schedule from the protocol, the with-class
-  score logged as `with_class_score`, the progress record and the native
+  score logged as `with_class_score`, the progress heartbeat and the native
   export. The adapters (`adapters.py`) only build a `LightningModule` and a
   `LightningDataModule`: the Ultralytics ones reuse the YOLO neural module and
   dataloader; Mask R-CNN is the sibling torchvision adapter under the same
@@ -755,25 +755,32 @@ training wrapper are untouched by this path.
   translated prose. `training_state.json` is published before the metrics it
   accompanies and `completion.json` atomically last, after the final log line; a
   final epoch with missing artifacts is published rather than retrained, using
-  the fit record the progress snapshot carries. Before publishing, the kept
+  the fit record the committed checkpoint carries. Before publishing, the kept
   checkpoint is validated once more, so `metrics.json` and `best.pt` always
   describe the same weights — including after a resume whose remaining epochs
   never improved. A fresh run aimed at an existing execution directory is
   refused: `resume=true` continues it, a new directory starts clean. `PipelineError` carries a stable code, invariant
   English template and parameters; the command logs those and translates only
   at display time.
-- `resume.py` reads the per-epoch progress snapshot; the fit's own record
-  (precision that ran, device, verified weights, augmentation) and the best
-  checkpoint's path travel with it. Lightning writes
-  `checkpoints/lightning/checkpoint_NNN.ckpt` per completed epoch and
-  `last.ckpt`; resuming hands `last.ckpt` to `Trainer.fit`, which restores
-  weights, optimizer, scheduler, epoch progress and both callbacks' state
-  (patience and the kept best). The progress record is the human-readable
-  heartbeat and the guard, not the training authority: the checkpoint decides
-  how many epochs completed. A different protocol or a different dataset
-  fingerprint is refused: relabelled images or an edited COCO export are a
-  different dataset, and the kept weights belong to the bytes that trained
-  them.
+- `resume.py` reads recovery from the Lightning checkpoint, not from the
+  progress record. Lightning writes `checkpoints/lightning/checkpoint_NNN.ckpt`
+  per completed epoch and `last.ckpt`; resuming hands the committed
+  `last.ckpt` to `Trainer.fit`, which restores weights, optimizer, scheduler,
+  epoch progress and both callbacks' state (patience and the kept best). That
+  checkpoint is the one authority for completed epochs, the kept checkpoint and
+  its score, and whether early stopping already fired. It also carries a
+  `polyx_recovery` block with the protocol, dataset fingerprint and resolved fit
+  (precision that ran, device, verified weights, augmentation), so an execution
+  whose progress record is missing or one epoch behind is still resumable. A
+  committed early stop is a finish condition: the resumed job publishes the
+  winner without another fit. A committed state that names no winner, or names
+  a file that is gone, fails by name instead of substituting another epoch.
+  `progress.json` is only the heartbeat and provenance aid — the last epoch a
+  process reported, which leases use to tell a live job from a dead one; its
+  stale values never decide an epoch count, a winner or a stop. A different
+  protocol or a different dataset fingerprint is still refused: relabelled
+  images or an edited COCO export are a different dataset, and the kept weights
+  belong to the bytes that trained them.
 - Both families validate inside Lightning's validation loop, in `validation_step`.
   YOLO exports the epoch's native snapshot at `on_validation_start` and scores a
   wrapper loaded from that file: Ultralytics fuses and freezes whatever network

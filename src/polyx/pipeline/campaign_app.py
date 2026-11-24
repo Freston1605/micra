@@ -9,10 +9,12 @@ evaluator, early stopping and artifact layout are the same ones a single
 execution uses.
 
 A campaign is resumable without a separate per-family switch. With
-``resume=true`` a job resumes a family that has a progress snapshot, skips a
-family whose execution already finished under the same protocol, and runs a
-family that never started normally. Passing the flag to every job and letting
-each job decide is what makes resubmission safe.
+``resume=true`` a job resumes a family whose committed Lightning checkpoint
+can be recovered, skips a family whose execution already finished under the
+same protocol, and runs a family that never started normally. Passing the flag
+to every job and letting each job decide is what makes resubmission safe. The
+progress heartbeat is not the marker: a checkpoint whose heartbeat was never
+written is still resumable.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from polyx.pipeline.dataset import (
 )
 from polyx.pipeline.errors import PipelineError, report_failure
 from polyx.pipeline.execution import run_execution
+from polyx.pipeline.resume import has_committed_checkpoint
 
 
 def campaign_raw(cfg: DictConfig) -> dict:
@@ -70,7 +73,8 @@ def _selection_from(layout: ArtifactLayout, state: dict) -> float:
 def _resume_decision(config: ExecutionConfig) -> tuple[str, dict]:
     """Whether this family should resume, be skipped, or start fresh.
 
-    Only a family with a progress snapshot resumes; one whose execution already
+    A family with a committed Lightning checkpoint resumes even when its
+    progress heartbeat is missing or stale; one whose execution already
     finished under the same protocol is skipped so its metrics are not
     recomputed or overwritten; everything else starts normally even when the
     campaign was submitted with ``resume=true``.
@@ -88,7 +92,7 @@ def _resume_decision(config: ExecutionConfig) -> tuple[str, dict]:
                 path=str(config.output_dir),
             )
         return "finished", state
-    if layout.progress.is_file():
+    if has_committed_checkpoint(config.output_dir):
         # A completed final epoch without a completion record is still resumed:
         # the engine finishes publishing the missing artifacts before retraining.
         return "resume", {}

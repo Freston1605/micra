@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-20 19:00-0300\n"
+"POT-Creation-Date: 2026-11-24 13:47-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -6106,7 +6106,7 @@ msgstr ""
 msgid "Per class"
 msgstr ""
 
-#: src/polyx/pipeline/campaign_app.py:84
+#: src/polyx/pipeline/campaign_app.py:88
 #, python-format
 msgid ""
 "%(path)s already holds an execution for a different protocol; use a new campaign root instead of"
@@ -6242,28 +6242,35 @@ msgid ""
 " fold only"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:79
+#: src/polyx/pipeline/execution.py:88
+#, python-format
+msgid ""
+"cannot verify the dataset of %(path)s: the committed checkpoint records no dataset identity, so "
+"start a new output directory instead of resuming"
+msgstr ""
+
+#: src/polyx/pipeline/execution.py:97
 #, python-format
 msgid "cannot verify the dataset of %(path)s: it has no file hashes"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:85
+#: src/polyx/pipeline/execution.py:103
 #, python-format
 msgid ""
 "the dataset behind %(path)s changed since its checkpoint was written; start a new output "
 "directory instead of resuming over it"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:186
+#: src/polyx/pipeline/execution.py:221
 #, python-format
 msgid "dataset audit failed: %(codes)s"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:133
-msgid "protocol changed since the progress snapshot was written"
+#: src/polyx/pipeline/execution.py:180
+msgid "protocol changed since the checkpoint was written"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:148
+#: src/polyx/pipeline/execution.py:195
 #, python-format
 msgid ""
 "%(path)s already holds an execution; pass resume=true to continue it or choose a new output "
@@ -6291,7 +6298,7 @@ msgid ""
 "annotation tool."
 msgstr ""
 
-#: src/polyx/pipeline/sweep_app.py:62
+#: src/polyx/pipeline/sweep_app.py:63
 #, python-format
 msgid "study trial %(trial)d is already running in another process"
 msgstr ""

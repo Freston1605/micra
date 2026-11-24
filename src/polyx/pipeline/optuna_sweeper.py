@@ -8,9 +8,9 @@ objective persists and recovers an execution keyed by the study's identity.
 
 A trial killed by a time limit stays ``RUNNING`` in Optuna. Before asking for
 new trials, ``sweep`` relaunches those trials from their persisted record: a
-trial with a progress snapshot continues its checkpoint, one that never wrote
-a checkpoint retries the same parameters, and one whose execution finished
-but whose score never reached Optuna is told from its own metrics.
+trial with a committed Lightning checkpoint continues from it, one that never
+wrote a checkpoint retries the same parameters, and one whose execution
+finished but whose score never reached Optuna is told from its own metrics.
 """
 
 from __future__ import annotations

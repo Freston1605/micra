@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Poly-X\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-20 19:00-0300\n"
+"POT-Creation-Date: 2026-11-24 13:47-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -6668,7 +6668,7 @@ msgstr "Parada anticipada"
 msgid "Per class"
 msgstr "Por clase"
 
-#: src/polyx/pipeline/campaign_app.py:84
+#: src/polyx/pipeline/campaign_app.py:88
 #, python-format
 msgid ""
 "%(path)s already holds an execution for a different protocol; use a new campaign root instead of"
@@ -6827,12 +6827,21 @@ msgstr ""
 "%(path)s está declarado tanto en el split %(first)s como en el %(second)s; una imagen solo puede"
 " pertenecer a un pliegue"
 
-#: src/polyx/pipeline/execution.py:79
+#: src/polyx/pipeline/execution.py:88
+#, python-format
+msgid ""
+"cannot verify the dataset of %(path)s: the committed checkpoint records no dataset identity, so "
+"start a new output directory instead of resuming"
+msgstr ""
+"no se puede verificar el dataset de %(path)s: el checkpoint confirmado no registra la identidad "
+"del dataset; inicie un directorio de salida nuevo en lugar de reanudar"
+
+#: src/polyx/pipeline/execution.py:97
 #, python-format
 msgid "cannot verify the dataset of %(path)s: it has no file hashes"
 msgstr "no se puede verificar el dataset de %(path)s: no tiene hashes de archivo"
 
-#: src/polyx/pipeline/execution.py:85
+#: src/polyx/pipeline/execution.py:103
 #, python-format
 msgid ""
 "the dataset behind %(path)s changed since its checkpoint was written; start a new output "
@@ -6841,16 +6850,16 @@ msgstr ""
 "el dataset de %(path)s cambió desde que se escribió su checkpoint; inicie un directorio de "
 "salida nuevo en lugar de reanudar sobre él"
 
-#: src/polyx/pipeline/execution.py:186
+#: src/polyx/pipeline/execution.py:221
 #, python-format
 msgid "dataset audit failed: %(codes)s"
 msgstr "la auditoría del dataset falló: %(codes)s"
 
-#: src/polyx/pipeline/execution.py:133
-msgid "protocol changed since the progress snapshot was written"
-msgstr "el protocolo cambió desde que se escribió la instantánea de progreso"
+#: src/polyx/pipeline/execution.py:180
+msgid "protocol changed since the checkpoint was written"
+msgstr "el protocolo cambió desde que se escribió el checkpoint"
 
-#: src/polyx/pipeline/execution.py:148
+#: src/polyx/pipeline/execution.py:195
 #, python-format
 msgid ""
 "%(path)s already holds an execution; pass resume=true to continue it or choose a new output "
@@ -6886,7 +6895,7 @@ msgstr ""
 "YOLO; el cargador fijado las colapsaría en un solo objetivo. Combine o elimine la duplicada en "
 "la herramienta de anotación."
 
-#: src/polyx/pipeline/sweep_app.py:62
+#: src/polyx/pipeline/sweep_app.py:63
 #, python-format
 msgid "study trial %(trial)d is already running in another process"
 msgstr "el ensayo %(trial)d del estudio ya se está ejecutando en otro proceso"

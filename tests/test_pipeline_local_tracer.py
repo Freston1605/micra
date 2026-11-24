@@ -500,13 +500,13 @@ def test_restore_best_false_is_refused_instead_of_crashing_after_training(
     assert not (output / "training_state.json").exists()
 
 
-def test_resume_without_progress_fails_loudly(
+def test_resume_without_a_committed_checkpoint_fails_loudly(
     tmp_path: Path,
     tiny_dataset: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A resume request without a progress snapshot must not restart silently."""
+    """A resume request without a checkpoint must not restart silently."""
     _install_fakes(monkeypatch, [_boxes_prediction()])
     output = tmp_path / "executions" / "never-started"
 
@@ -518,8 +518,9 @@ def test_resume_without_progress_fails_loudly(
     )
 
     assert code == 1
-    assert "no progress" in capsys.readouterr().err
+    assert "no committed Lightning checkpoint" in capsys.readouterr().err
     assert not (output / "training_state.json").exists()
+    assert _FakeYOLO.validation_calls == 0
 
 
 def test_resume_with_a_different_protocol_is_refused(
