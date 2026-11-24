@@ -54,3 +54,61 @@ rather than a single acquisition type.
 - `data/dataset.yaml` — unchanged class names, plus the `test` split
 
 Run `python -m pytest -q` across the repository after re-applying the split.
+
+## Inventory (read-only)
+
+`inventory_dataset.py` records what a copy of the dataset actually contains, so
+a training execution can be traced back to the files that produced it. It
+writes three tables and never renames, moves or edits an image, a label or the
+split:
+
+```bash
+.venv/bin/python tools/data/inventory_dataset.py --root data \
+  --manifest tools/data/split_manifest.py --output-dir data/inventory
+```
+
+- `images.csv` — one row per image: a rename-proof `image_id` (the first 16 hex
+  of its SHA-256), relative image and label paths, split, plate group, size,
+  label hash, annotation status and boxes per class.
+- `plates.csv` — one row per plate group: sample type, spike status and the
+  **source** of that claim. A category read from a file name is marked
+  `filename`; `sample_id` stays empty until a laboratory record fills it.
+- `dataset-version.json` — schema version, class names, per-split totals, the
+  problems found and a `fingerprint` computed exactly as
+  `polyx.pipeline.dataset` computes it, so it can be compared with the digest a
+  training execution records.
+
+Only the presence of EXIF metadata is recorded: capture dates travel because
+they group acquisition sessions, GPS coordinates never do. Exit status is 1
+when the inventory found problems (a missing label, a plate group crossing
+splits, byte-identical images in two folds); the tables are still written so
+the problems can be read from them. `--force` overwrites an earlier inventory.
+
+## Portable export
+
+`export_renamed_dataset.py` writes a **copy** whose images and labels are named
+from the image's SHA-256, so a download, a ZIP or a second filesystem cannot
+mangle a name into a different meaning. The source tree is never touched.
+
+```bash
+.venv/bin/python tools/data/export_renamed_dataset.py --root data \
+  --out data_portable --manifest tools/data/split_manifest.py
+```
+
+The copy keeps the same split, class map and bytes, and adds `mapping.csv`:
+`image_id`, original image and label names, the new paths, the plate group and
+source, both hashes and the box count. The split and class counts are verified
+after the copy, so an export that loses a label fails instead of shipping.
+
+Because the fingerprint is taken over the paths, a rename changes it
+(`bc71bab5…` for the study split, `5d3b2473…` for its portable copy) while the
+bytes and the mapping stay identical. Inventory the copy with
+`--groups <export>/mapping.csv` to keep the plate groups the names no longer
+carry:
+
+```bash
+.venv/bin/python tools/data/inventory_dataset.py --root data_portable \
+  --groups data_portable/mapping.csv --output-dir data_portable/inventory
+```
+
+

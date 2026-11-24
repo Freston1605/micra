@@ -50,9 +50,11 @@ The repository has one supported surface and one frozen artifact:
   extract/update/compile/audit/pseudo workflow), `tools/manual`
   (the manual chain), `tools/check.py` (the local gate: translation audit,
   suite, ruff and ty) and `tools/update_goldens.py` (characterization
-  goldens). `tools/data` holds the dataset tooling, including the Windows
-  packager `empaquetar_dataset_para_drive.bat`: it packages a dataset, not
-  the software.
+  goldens). `tools/data` holds the dataset tooling: the plate split
+  (`make_splits.py` + `split_manifest.py`), the read-only `inventory_dataset.py`,
+  the `export_renamed_dataset.py` portable export and the Windows packager
+  `empaquetar_dataset_para_drive.bat`; they package, copy or describe a
+  dataset, not the software.
 - **Frozen user manual**: `docs/manual/` is versioned so a checkout opens it
   offline, but it predates the MICRA rewrite and still describes the retired
   installers. It is out of scope until after the paper and is not
@@ -141,7 +143,7 @@ tools/                    # Development tooling (not packaged)
 ├── audit/                # Report fixture capture
 ├── i18n/                 # gettext workflow: extract, update, compile, audit, pseudo
 ├── manual/               # Manual chain (capture, generate, text ES/EN)
-└── data/                 # Dataset split tooling (manifest + make_splits)
+└── data/                 # Dataset tooling: split, inventory, portable export
 
 docs/                     # Documentation
 ├── manual/               # Compiled manual (versioned, offline)
