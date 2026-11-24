@@ -757,9 +757,19 @@ training wrapper are untouched by this path.
   separate ranking figure and never selects a checkpoint or drives Optuna.
   `mask_iou` is class-aware.
 - `execution.py` owns audit, provenance, publication and the artifact layout (`config.yaml`, `resolved_protocol.yaml`,
-  `provenance.json`, `training_state.json`, `progress.json`, `metrics.json`,
+  `execution_identity.json`, `provenance.json`, `training_state.json`, `progress.json`, `metrics.json`,
   `report.md`, `logs/`, `checkpoints/`, `completion.json`). `best.pt` is the
-  kept checkpoint. Saved audit findings are stable codes plus parameters, never
+  kept checkpoint. `execution_identity.json` is the one execution identity:
+  the resolved family (name, framework, task and weights declaration), the
+  initialization-weight identity (verified SHA-256 digest when pinned, else
+  the declared name), the protocol and the dataset fingerprint. Every
+  Lightning checkpoint embeds the same record, so a resume compares the
+  requested execution against the checkpoint that would be restored and
+  refuses any mismatch by field. Files a checkpoint references resolve inside
+  that execution's own `checkpoints/lightning/` directory: Lightning stores an
+  absolute `best_model_path`, which goes stale when the directory moves, so
+  the file name is resolved locally and an external path is refused.
+  Saved audit findings are stable codes plus parameters, never
   translated prose. `training_state.json` is published before the metrics it
   accompanies and `completion.json` atomically last, after the final log line; a
   final epoch with missing artifacts is published rather than retrained, using
@@ -777,7 +787,7 @@ training wrapper are untouched by this path.
   epoch progress and both callbacks' state (patience and the kept best). That
   checkpoint is the one authority for completed epochs, the kept checkpoint and
   its score, and whether early stopping already fired. It also carries a
-  `polyx_recovery` block with the protocol, dataset fingerprint and resolved fit
+  `polyx_recovery` block with the execution identity above and the resolved fit
   (precision that ran, device, verified weights, augmentation), so an execution
   whose progress record is missing or one epoch behind is still resumable. A
   committed early stop is a finish condition: the resumed job publishes the
@@ -785,10 +795,15 @@ training wrapper are untouched by this path.
   a file that is gone, fails by name instead of substituting another epoch.
   `progress.json` is only the heartbeat and provenance aid — the last epoch a
   process reported, which leases use to tell a live job from a dead one; its
-  stale values never decide an epoch count, a winner or a stop. A different
-  protocol or a different dataset fingerprint is still refused: relabelled
-  images or an edited COCO export are a different dataset, and the kept weights
-  belong to the bytes that trained them.
+  stale values never decide an epoch count, a winner, a stop or whether a
+  checkpoint belongs to this execution. A legacy checkpoint with no verifiable
+  identity record is refused with an explanation and left untouched: it is not
+  a resume point, even when the heartbeat still carries a protocol and
+  fingerprint. Staged or imported weights initialise a new run and are never a
+  resume point. Every checkpoint read the engine owns uses restricted
+  (`weights_only=True`) deserialization, including the recovery metadata, the
+  epoch inspection and Lightning's own `fit` and `validate`; there is no
+  unrestricted fallback on the pipeline path.
 - Both families validate inside Lightning's validation loop, in `validation_step`.
   YOLO exports the epoch's native snapshot at `on_validation_start` and scores a
   wrapper loaded from that file: Ultralytics fuses and freezes whatever network

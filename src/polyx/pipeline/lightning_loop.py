@@ -30,6 +30,7 @@ from typing import Any
 from polyx.pipeline.artifacts import ArtifactLayout, append_log, write_json
 from polyx.pipeline.config import ExecutionConfig, Protocol, protocol_to_dict
 from polyx.pipeline.evaluation import SharedEvaluator
+from polyx.pipeline.identity import IDENTITY_KEY, ExecutionIdentity
 from polyx.pipeline.resume import (
     RECOVERY_KEY,
     RecoveryState,
@@ -160,6 +161,7 @@ class ExecutionRecorder:
     layout: ArtifactLayout
     config: ExecutionConfig
     dataset_fingerprint: str
+    identity: ExecutionIdentity
     evaluator: SharedEvaluator
     #: The fit state resolved once the trainer exists (precision, device,
     #: verified weights, augmentation); every progress record carries it.
@@ -344,14 +346,13 @@ class PolyxModule:
         """Carry the recovery facts Lightning does not serialise.
 
         Lightning restores the loop, optimizer, scheduler and both callbacks
-        from the checkpoint it writes. The protocol, dataset identity and the
-        resolved fit are the engine's, so they travel in the same file. A
-        checkpoint whose progress heartbeat is missing or one epoch behind is
-        then still a complete recovery record.
+        from the checkpoint it writes. The execution identity and the resolved
+        fit are the engine's, so they travel in the same file. One identity
+        record covers the family, initialization weights, protocol and dataset
+        fingerprint, and a checkpoint without it is refused as legacy.
         """
         checkpoint[RECOVERY_KEY] = {
-            "protocol": protocol_to_dict(self.recorder.config),
-            "dataset_fingerprint": self.recorder.dataset_fingerprint,
+            IDENTITY_KEY: self.recorder.identity.to_dict(),
             "fit": self.recorder.fit,
         }
 
@@ -473,7 +474,7 @@ def run_fit(
         weights=run.weights,
         augmentation=run.augmentation,
     )
-    fit_kwargs: dict[str, Any] = {}
+    fit_kwargs: dict[str, Any] = {"weights_only": True}
     if resume_checkpoint is not None:
         fit_kwargs["ckpt_path"] = str(resume_checkpoint)
     trainer.fit(run.module, datamodule=run.datamodule, **fit_kwargs)
@@ -530,7 +531,13 @@ def evaluate_best(
         best = Path(str(checkpoint.best_model_path or ""))
     if not best.is_file():
         raise RuntimeError("the Lightning loop kept no best checkpoint to publish")
-    trainer.validate(run.module, datamodule=run.datamodule, ckpt_path=str(best), verbose=False)
+    trainer.validate(
+        run.module,
+        datamodule=run.datamodule,
+        ckpt_path=str(best),
+        verbose=False,
+        weights_only=True,
+    )
     metrics = run.module.last_metrics
     if metrics is None:
         raise RuntimeError("the kept checkpoint produced no evaluation metrics")

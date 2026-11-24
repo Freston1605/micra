@@ -280,6 +280,7 @@ def test_local_tracer_emits_every_artifact_and_names_each_criterion(
         "config.yaml",
         "resolved_protocol.yaml",
         "provenance.json",
+        "execution_identity.json",
         "training_state.json",
         "metrics.json",
         "report.md",
@@ -588,7 +589,8 @@ def test_resume_with_a_different_protocol_is_refused(
     )
 
     assert code == 1
-    assert "protocol changed" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "protocol.batch changed" in error
     assert not (output / "training_state.json").exists()
 
 
@@ -653,7 +655,7 @@ def test_resume_fingerprints_the_resolved_dataset_outside_the_yaml_directory(
         assert (output / "completion.json").is_file()
     else:
         assert code == 1
-        assert "dataset behind" in capsys.readouterr().err
+        assert "dataset fingerprint" in capsys.readouterr().err
         assert not (output / "training_state.json").exists()
 
 

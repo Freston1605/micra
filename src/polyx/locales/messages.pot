@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 13:50-0300\n"
+"POT-Creation-Date: 2026-11-24 14:07-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -6078,31 +6078,31 @@ msgstr ""
 msgid "pinned weights are missing or unverified; stage them with --url on a networked node"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:161
+#: src/polyx/pipeline/artifacts.py:166
 msgid "Training execution report"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:163
+#: src/polyx/pipeline/artifacts.py:168
 msgid "Family"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:164
+#: src/polyx/pipeline/artifacts.py:169
 msgid "Backend"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:165
+#: src/polyx/pipeline/artifacts.py:170
 msgid "Selection metric"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:167
+#: src/polyx/pipeline/artifacts.py:172
 msgid "Figures"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:179
+#: src/polyx/pipeline/artifacts.py:184
 msgid "Early stopping"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:173
+#: src/polyx/pipeline/artifacts.py:178
 msgid "Per class"
 msgstr ""
 
@@ -6249,44 +6249,40 @@ msgid ""
 " fold only"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:88
-#, python-format
-msgid ""
-"cannot verify the dataset of %(path)s: the committed checkpoint records no dataset identity, so "
-"start a new output directory instead of resuming"
-msgstr ""
-
-#: src/polyx/pipeline/execution.py:97
-#, python-format
-msgid "cannot verify the dataset of %(path)s: it has no file hashes"
-msgstr ""
-
-#: src/polyx/pipeline/execution.py:103
-#, python-format
-msgid ""
-"the dataset behind %(path)s changed since its checkpoint was written; start a new output "
-"directory instead of resuming over it"
-msgstr ""
-
-#: src/polyx/pipeline/execution.py:221
+#: src/polyx/pipeline/execution.py:154
 #, python-format
 msgid "dataset audit failed: %(codes)s"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:180
-msgid "protocol changed since the checkpoint was written"
+#: src/polyx/pipeline/execution.py:160
+#, python-format
+msgid "cannot verify the dataset of %(path)s: it has no file hashes"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:195
+#: src/polyx/pipeline/execution.py:126
 #, python-format
 msgid ""
 "%(path)s already holds an execution; pass resume=true to continue it or choose a new output "
 "directory"
 msgstr ""
 
+#: src/polyx/pipeline/identity.py:159
+#, python-format
+msgid ""
+"cannot resume %(path)s: %(field)s changed since its checkpoint was written; start a new output "
+"directory instead of resuming over it"
+msgstr ""
+
 #: src/polyx/pipeline/optuna_sweeper.py:160
 #, python-format
 msgid "recovery of interrupted trials failed (%(count)d); the study was not extended"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:133
+#, python-format
+msgid ""
+"cannot resume %(path)s: the committed checkpoint at %(checkpoint)s carries no verifiable "
+"execution identity; it is left untouched, so start a new output directory instead of resuming"
 msgstr ""
 
 #: src/polyx/pipeline/seg_conversion.py:184

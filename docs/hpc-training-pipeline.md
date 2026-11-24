@@ -115,10 +115,11 @@ for every family:
 ```
 config.yaml            # fully resolved configuration
 resolved_protocol.yaml # the protocol exactly as the adapter consumed it
+execution_identity.json # family, weights identity, protocol, dataset fingerprint
 provenance.json        # git commit, dataset hashes, audit, dataset source, conversion
 training_state.json    # adapter state, AMP precision, early-stopping decisions
 metrics.json           # named figures, per-class figures, selection criterion
-progress.json          # atomic per-epoch resume snapshot
+progress.json          # atomic per-epoch heartbeat (never a resume authority)
 report.md              # human-readable summary, criteria included
 logs/training.log      # plain-text execution log
 checkpoints/best.pt    # best live weights, selected by with-class F1
@@ -401,26 +402,47 @@ once in `build_trainer`:
 
 The family-native export (`epoch_NNN.pt`, and `best.pt` restored from the kept
 checkpoint) keeps its historical shape for compatibility. An Ultralytics `.pt`
-is not a Lightning checkpoint and is never used for resume. If a progress
-snapshot has no Lightning checkpoint (one written before this behaviour
-existed), the execution refuses to resume instead of silently restarting the
-epoch loop.
+is not a Lightning checkpoint and is never used for resume. Staged or imported
+weights initialise a new run; they are an initialization, not a resume point.
+If a resume request has no Lightning checkpoint, the execution refuses instead
+of silently restarting the epoch loop.
+
+A checkpoint is bound to one execution. `execution_identity.json` and the
+checkpoint's own engine block carry the same record: the resolved family
+(name, framework, task and weights declaration), the initialization-weight
+identity, the protocol and the dataset fingerprint. A pinned weight is
+identified by the SHA-256 digest verified against the manifest, so the record
+survives a move to another node; an unpinned weight is identified by its
+declared name. Resume compares every part and refuses a mismatch with an error
+that names the field — a compatible tensor shape does not make another family,
+variant, initialization or protocol the same execution. The progress heartbeat
+is never consulted for identity, an epoch count, a winner or a stop.
+
+The Lightning checkpoint also records its best file as an absolute path.
+Moving the execution makes that prefix stale, so the reference is resolved by
+file name inside the execution's own `checkpoints/lightning/` directory. A
+moved execution resumes; a reference that does not resolve inside it is
+refused rather than read from an external location. Every checkpoint read the
+pipeline owns — recovery metadata, epoch inspection, `Trainer.fit` resume and
+the publication re-validation — uses restricted `weights_only=True` loading,
+with no unrestricted fallback. A checkpoint that needs a wider unpickler, or
+that carries no verifiable identity record, is a legacy checkpoint: it is
+refused with an explanation and left untouched, because it cannot be proven to
+belong to this execution.
 
 Publication re-validates the kept checkpoint once and scores that run, rather
 than carrying the last epoch's figures forward. `metrics.json` and `best.pt`
 therefore always describe the same weights, including after a resume whose
-remaining epochs never improved. The progress record also carries the fit's own
-record — the precision Lightning actually ran, the device, the verified weights
-and the augmentation — so a publication recovered after the last epoch states
-the same facts instead of inventing them.
+remaining epochs never improved. The committed checkpoint also carries the
+fit's own record — the precision Lightning actually ran, the device, the
+verified weights and the augmentation — so a publication recovered after the
+last epoch states the same facts instead of inventing them.
 
 The snapshot also names the dataset it trained on, as one digest over every
 image and label it resolved. A resume compares that digest against the dataset
 the new invocation resolved and refuses a mismatch: relabelled images or an
 edited COCO export are a different dataset, and the kept weights and best
-figures belong to the bytes that produced them. The protocol comparison alone
-could not see that, so a changed dataset used to resume silently against the
-old checkpoint.
+figures belong to the bytes that produced them.
 
 Both the native export and `best.pt` are written from the live Lightning
 network, without the staged checkpoint's `ema` entry: Ultralytics prefers an

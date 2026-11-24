@@ -44,6 +44,24 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `gh attestation verify` — with the pre-release rule stated once.
 
 ### Changed
+- **Resume is bound to one execution and loads checkpoints restrictively (#241).**
+  Every execution now writes `execution_identity.json` and embeds the same
+  record in every Lightning checkpoint: resolved family (name, framework, task
+  and weights declaration), initialization-weight identity (verified SHA-256
+  digest when pinned, else the declared name), protocol and dataset
+  fingerprint. A resume compares the requested execution against it and refuses
+  any mismatch with an error naming the field. Lightning's absolute
+  `best_model_path` is resolved inside the execution's own checkpoint
+  directory, so a moved execution resumes and an external path is refused.
+  Recovery metadata, epoch inspection, `fit` resume and re-validation all use
+  restricted `weights_only=True` loading; there is no unrestricted fallback.
+  **Behaviour change:** a checkpoint with no verifiable identity record — every
+  checkpoint written before this version — is now refused with an explanation
+  and left untouched. This supersedes the progress-record fallback #239 added
+  for identity, protocol and dataset fingerprint: the heartbeat is never
+  enough. Staged or imported weights initialise a new run and cannot be
+  mistaken for a resume. `GLOSSARY.md` records **execution identity** and
+  **resume checkpoint**.
 - **Model selection is fixed to the validation split (#238).** A single
   training execution, a campaign job and a study trial refuse any
   `protocol.split` other than `val` before the first fit or trial — composed,

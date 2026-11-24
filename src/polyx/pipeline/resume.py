@@ -6,23 +6,29 @@ module reads that committed checkpoint as the one authority for recovery:
 completed epochs, the kept checkpoint and its score, and whether the loop
 stopped early all come from it.
 
+The checkpoint is also bound to one execution. It carries the engine's
+identity record — family, initialization weights, protocol and dataset
+fingerprint — and every read here is a restricted ``weights_only`` load. A file
+that cannot be verified, or a checkpoint reference outside the execution's own
+checkpoint directory, is refused rather than read with a wider mode.
+
 The progress record (``progress.json``) is a heartbeat and provenance aid. It
 says how far the last *reported* epoch got, so a human or a lease can tell a
 live job from a dead one, but a stale value in it never decides an epoch count,
-a winner or a stop. When it carries the protocol, dataset identity and resolved
-fit of a run written before the checkpoint stored them, those descriptive facts
-are still read from it; the checkpoint wins whenever both are present.
+a winner, a stop or whether a checkpoint belongs to this execution.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from polyx.core.i18n import N_
 from polyx.pipeline.artifacts import ArtifactLayout
+from polyx.pipeline.errors import PipelineError
+from polyx.pipeline.identity import IDENTITY_KEY, ExecutionIdentity
 
 #: Top-level key of the engine's recovery facts inside a Lightning checkpoint.
 RECOVERY_KEY = "polyx_recovery"
@@ -32,11 +38,15 @@ _EPOCH_CHECKPOINT = re.compile(r"^checkpoint_(\d+)\.ckpt$")
 
 
 def checkpoint_epoch(path: Path) -> int:
-    """The zero-based epoch a Lightning checkpoint holds."""
+    """The zero-based epoch a Lightning checkpoint holds.
+
+    The read is restricted: a checkpoint the pipeline owns is data plus
+    tensors, and a file that needs a wider unpickler is not one of ours.
+    """
     import torch
 
     try:
-        loaded = torch.load(Path(path), map_location="cpu", weights_only=False)
+        loaded = torch.load(Path(path), map_location="cpu", weights_only=True)
     except Exception as exc:
         raise RuntimeError(f"cannot read the Lightning checkpoint at {path}: {exc}") from exc
     return int(loaded["epoch"])
@@ -62,17 +72,19 @@ class RecoveryState:
     #: The ``EarlyStopping`` decision and patience count stored beside it.
     stopped_early: bool
     wait_count: int
-    #: Descriptive provenance stored by this engine; absent in checkpoints
-    #: written before the engine embedded it.
-    protocol: dict[str, Any] | None = None
-    dataset_fingerprint: str | None = None
+    #: The execution this checkpoint belongs to.
+    identity: ExecutionIdentity
+    #: The fit state resolved by the interrupted run.
     fit: dict[str, Any] | None = None
 
 
 def committed_checkpoint(output_dir: Path) -> RecoveryState | None:
     """Read the newest committed Lightning checkpoint, or ``None`` if none exists."""
-    path = _committed_checkpoint_path(ArtifactLayout(Path(output_dir)))
-    return None if path is None else load_recovery(path)
+    layout = ArtifactLayout(Path(output_dir))
+    path = _committed_checkpoint_path(layout)
+    if path is None:
+        return None
+    return load_recovery(path, checkpoint_dir=layout.lightning_checkpoints, root=layout.root)
 
 
 def has_committed_checkpoint(output_dir: Path) -> bool:
@@ -80,35 +92,60 @@ def has_committed_checkpoint(output_dir: Path) -> bool:
     return _committed_checkpoint_path(ArtifactLayout(Path(output_dir))) is not None
 
 
-def load_recovery(path: Path) -> RecoveryState:
-    """Read the recovery authority out of one committed Lightning checkpoint."""
+def load_recovery(
+    path: Path,
+    *,
+    checkpoint_dir: Path | None = None,
+    root: Path | None = None,
+) -> RecoveryState:
+    """Read the recovery authority out of one committed Lightning checkpoint.
+
+    ``checkpoint_dir`` is the execution's own Lightning checkpoint directory.
+    Lightning stores ``best_model_path`` as an absolute path, so a moved
+    execution carries the old prefix; the reference is resolved by file name
+    inside ``checkpoint_dir``. A reference whose file is not there is refused,
+    never read from wherever the absolute path happens to point.
+    """
     import torch
 
     path = Path(path)
+    directory = Path(checkpoint_dir) if checkpoint_dir is not None else path.parent
+    execution_root = Path(root) if root is not None else directory.parent.parent
     try:
-        saved = torch.load(path, map_location="cpu", weights_only=False)
+        saved = torch.load(path, map_location="cpu", weights_only=True)
     except Exception as exc:
         raise RuntimeError(
-            f"cannot read the committed Lightning checkpoint at {path}: {exc}"
+            f"cannot read the committed Lightning checkpoint at {path} with restricted "
+            f"loading: {exc}"
         ) from exc
     if not isinstance(saved, dict) or "epoch" not in saved:
         raise RuntimeError(f"{path} is not a Lightning training checkpoint")
+
+    metadata = saved.get(RECOVERY_KEY)
+    identity = (
+        ExecutionIdentity.from_dict(metadata.get(IDENTITY_KEY))
+        if isinstance(metadata, dict)
+        else None
+    )
+    if identity is None:
+        raise PipelineError(
+            "execution.identity_unrecorded",
+            N_(
+                "cannot resume %(path)s: the committed checkpoint at %(checkpoint)s carries "
+                "no verifiable execution identity; it is left untouched, so start a new "
+                "output directory instead of resuming"
+            ),
+            path=str(execution_root),
+            checkpoint=str(path),
+        )
 
     model = _callback_state(saved, "ModelCheckpoint", path)
     early = _callback_state(saved, "EarlyStopping", path)
     named = model.get("best_model_path")
     if not named:
         raise RuntimeError(f"the committed state at {path} names no best checkpoint to publish")
-    best = Path(str(named))
-    if not best.is_file():
-        raise RuntimeError(f"the best checkpoint named by the committed state is missing: {best}")
-
-    metadata = saved.get(RECOVERY_KEY)
-    if not isinstance(metadata, dict):
-        metadata = {}
-    protocol = metadata.get("protocol")
-    fingerprint = metadata.get("dataset_fingerprint")
-    fit = metadata.get("fit")
+    best = _local_checkpoint(str(named), directory, path)
+    fit = metadata.get("fit") if isinstance(metadata, dict) else None
     return RecoveryState(
         checkpoint=path,
         epochs_completed=int(saved["epoch"]) + 1,
@@ -117,8 +154,7 @@ def load_recovery(path: Path) -> RecoveryState:
         best_epoch=checkpoint_epoch(best),
         stopped_early=_reason_stopped(early.get("stopping_reason")),
         wait_count=int(early.get("wait_count", 0) or 0),
-        protocol=protocol if isinstance(protocol, dict) else None,
-        dataset_fingerprint=fingerprint if isinstance(fingerprint, str) else None,
+        identity=identity,
         fit=fit if isinstance(fit, dict) else None,
     )
 
@@ -139,6 +175,32 @@ def _committed_checkpoint_path(layout: ArtifactLayout) -> Path | None:
     if not epochs:
         return None
     return max(epochs)[1]
+
+
+def _local_checkpoint(named: str, directory: Path, checkpoint: Path) -> Path:
+    """Resolve a recorded checkpoint reference inside the execution's directory.
+
+    Lightning records an absolute path at save time. The file name is the part
+    that still means something after the execution is moved to another node;
+    the recorded parent is not trusted. A name that is not a Lightning
+    checkpoint, or whose file is not in this execution, is refused.
+    """
+    recorded = Path(named)
+    name = recorded.name
+    if not name or not (_EPOCH_CHECKPOINT.match(name) or name == "last.ckpt"):
+        raise RuntimeError(
+            f"the committed state at {checkpoint} names {recorded}, which is not a "
+            "Lightning checkpoint file"
+        )
+    candidate = directory / name
+    if candidate.is_file():
+        return candidate
+    if recorded.is_absolute() and recorded.parent != directory:
+        raise RuntimeError(
+            f"the checkpoint {recorded} named by {checkpoint} is outside this execution's "
+            f"checkpoint directory {directory}, and {candidate} does not exist"
+        )
+    raise RuntimeError(f"the best checkpoint named by the committed state is missing: {candidate}")
 
 
 def _callback_state(saved: dict[str, Any], prefix: str, path: Path) -> dict[str, Any]:
@@ -176,70 +238,3 @@ def _reason_stopped(reason: Any) -> bool:
         return int(reason) != 0
     except (TypeError, ValueError):
         return bool(reason)
-
-
-@dataclass(frozen=True)
-class ResumeState:
-    """Descriptive state read from a progress heartbeat.
-
-    Nothing here decides a training outcome. It names the protocol, dataset
-    identity and resolved fit of a run whose checkpoint predates the embedded
-    metadata, so an older execution keeps its guards. ``epochs_completed`` and
-    ``best_*`` are historical evidence only.
-    """
-
-    epochs_completed: int
-    resume_checkpoint: Path | None
-    best_score: float | None
-    stopped_early: bool
-    protocol: dict[str, Any] | None
-    #: Digest of every dataset file the interrupted execution trained on.
-    dataset_fingerprint: str
-    #: The fit resolved by the interrupted execution (precision, device,
-    #: verified weights, augmentation).
-    fit: dict[str, Any] | None = None
-    #: Non-improving validation epochs the early-stopping callback counted.
-    wait_count: int = 0
-    #: The epoch that set the kept checkpoint, and that checkpoint's path.
-    best_epoch: int = -1
-    best_lightning_checkpoint: Path | None = None
-
-    @classmethod
-    def load(cls, path: Path) -> ResumeState:
-        """Read a progress heartbeat written by a previous run."""
-        path = Path(path)
-        try:
-            raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"unreadable progress snapshot {path}: {exc}") from exc
-        if not isinstance(raw, dict):
-            raise RuntimeError(f"invalid progress snapshot {path}: expected a mapping")
-        try:
-            resume_checkpoint = raw.get("resume_checkpoint")
-            fit = raw.get("fit")
-            if fit is not None and not isinstance(fit, dict):
-                raise TypeError("fit must be a mapping")
-            protocol = raw.get("protocol")
-            if protocol is not None and not isinstance(protocol, dict):
-                raise TypeError("protocol must be a mapping")
-            fingerprint = raw.get("dataset_fingerprint")
-            if fingerprint is not None and not isinstance(fingerprint, str):
-                raise TypeError("dataset_fingerprint must be a string")
-            return cls(
-                epochs_completed=int(raw.get("epochs_completed", 0)),
-                resume_checkpoint=Path(resume_checkpoint) if resume_checkpoint else None,
-                best_score=raw.get("best_score"),
-                stopped_early=bool(raw.get("stopped_early", False)),
-                protocol=dict(protocol) if protocol is not None else None,
-                dataset_fingerprint=fingerprint or "",
-                fit=fit,
-                wait_count=int((raw.get("early_stopping") or {}).get("wait_count", 0)),
-                best_epoch=int(raw.get("best_epoch", -1)),
-                best_lightning_checkpoint=(
-                    Path(raw["best_lightning_checkpoint"])
-                    if raw.get("best_lightning_checkpoint")
-                    else None
-                ),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise RuntimeError(f"invalid progress snapshot {path}: {exc}") from exc
