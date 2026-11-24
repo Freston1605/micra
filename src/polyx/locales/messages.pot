@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 13:50-0300\n"
+"POT-Creation-Date: 2026-11-24 14:08-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -6282,6 +6282,88 @@ msgstr ""
 msgid ""
 "%(path)s already holds an execution; pass resume=true to continue it or choose a new output "
 "directory"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:123
+#, python-format
+msgid "the selected checkpoint of %(path)s is missing: %(checkpoint)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:87
+#, python-format
+msgid ""
+"held-out evaluation needs a finished training execution: %(path)s has no readable completion "
+"record"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:102
+#, python-format
+msgid "the execution at %(path)s is incomplete: its completion record names no %(field)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:141
+#, python-format
+msgid "the execution at %(path)s records no %(kind)s dataset; pass --dataset with the test cohort"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:223
+#, python-format
+msgid "the test cohort declaration is missing: %(path)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:276
+#, python-format
+msgid "the confidence threshold must be within [0, 1], got %(value)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:412
+#, python-format
+msgid "write the held-out result outside %(path)s: the execution is read-only here"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:427
+#, python-format
+msgid ""
+"held-out evaluation covers only the Ultralytics detection and segmentation families; %(path)s "
+"was produced by %(family)s (%(framework)s)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:439
+#, python-format
+msgid "%(path)s already holds a held-out result; pass --force to replace it"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:495
+msgid "Score a frozen checkpoint on the held-out test cohort"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:501
+msgid "the finished training execution directory"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:507
+msgid "where to write heldout_test.json and heldout_test.md"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:513
+msgid "the test cohort: a YOLO data.yaml or a canonical COCO store; defaults to the execution's dataset"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:522
+msgid "one fixed confidence threshold (default: the execution's protocol confidence)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:527
+msgid "the inference device (default: the execution's backend device)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:532
+msgid "replace an existing held-out result in --output"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:200
+#, python-format
+msgid "the test cohort of %(path)s is missing %(image)s"
 msgstr ""
 
 #: src/polyx/pipeline/optuna_sweeper.py:160

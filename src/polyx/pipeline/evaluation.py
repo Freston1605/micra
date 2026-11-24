@@ -59,6 +59,18 @@ def prediction_budget(class_count: int) -> int:
     return max(_CANDIDATE_CEILING, _MAX_DETECTIONS * max(1, int(class_count)))
 
 
+def _split_role(split: str) -> str:
+    """How a criterion names the fold it was computed on.
+
+    Validation is the real-domain selection fold; ``test`` is the held-out
+    cohort the final evaluation reads. Naming it correctly keeps a held-out
+    figure from being described as a validation figure.
+    """
+    if split == "test":
+        return f"held-out test split '{split}'"
+    return f"real-domain validation split '{split}'"
+
+
 def _box_iou(first: list[float], second: list[float]) -> float:
     """IoU of two COCO boxes ``[x, y, width, height]``."""
     left = max(first[0], second[0])
@@ -502,17 +514,15 @@ class SharedEvaluator:
             f"{overlap} >= {_OPERATING_IOU:.2f})"
         )
         self.class_criterion = (
-            f"{operating}, class-aware, real-domain validation split '{split}' "
-            "(category id must match)"
+            f"{operating}, class-aware, {_split_role(split)} (category id must match)"
         )
         self.localisation_criterion = (
             f"localisation operating-point F1 (confidence >= {self.confidence_threshold:.2f}, "
-            f"{overlap} >= {_OPERATING_IOU:.2f}), class-agnostic, real-domain "
-            f"validation split '{split}' (localisation only)"
+            f"{overlap} >= {_OPERATING_IOU:.2f}), class-agnostic, "
+            f"{_split_role(split)} (localisation only)"
         )
         self.map_criterion = (
-            f"COCO {metric}mAP@[0.50:0.95] ({overlap}), class-aware, "
-            f"real-domain validation split '{split}'"
+            f"COCO {metric}mAP@[0.50:0.95] ({overlap}), class-aware, {_split_role(split)}"
         )
         self._sizes = {
             int(image["id"]): (int(image["width"]), int(image["height"]))
@@ -584,10 +594,7 @@ class SharedEvaluator:
             },
             "mAP50": {
                 "value": map50,
-                "criterion": (
-                    f"COCO {metric}AP@0.50, class-aware, real-domain validation split "
-                    f"'{self.split}'"
-                ),
+                "criterion": (f"COCO {metric}AP@0.50, class-aware, {_split_role(self.split)}"),
             },
             "mAP50-95": {"value": map5095, "criterion": self.map_criterion},
         }
@@ -598,7 +605,7 @@ class SharedEvaluator:
         if self.task == "segment":
             mask_criterion = (
                 f"mean best mask IoU per ground-truth instance, class-aware, "
-                f"real-domain validation split '{self.split}'"
+                f"{_split_role(self.split)}"
             )
             figures["mask_iou"] = {
                 "value": _mean_best_iou(prepared, all_truths, self.task),
@@ -607,15 +614,13 @@ class SharedEvaluator:
             figures["mask_mAP50"] = {
                 "value": map50,
                 "criterion": (
-                    f"COCO mask AP@0.50 (mask IoU), class-aware, real-domain "
-                    f"validation split '{self.split}'"
+                    f"COCO mask AP@0.50 (mask IoU), class-aware, {_split_role(self.split)}"
                 ),
             }
             figures["mask_mAP50-95"] = {
                 "value": map5095,
                 "criterion": (
-                    f"COCO mask mAP@[0.50:0.95] (mask IoU), class-aware, "
-                    f"real-domain validation split '{self.split}'"
+                    f"COCO mask mAP@[0.50:0.95] (mask IoU), class-aware, {_split_role(self.split)}"
                 ),
             }
 
@@ -638,7 +643,7 @@ class SharedEvaluator:
                     "value": _ap_at_iou(
                         predicted.get(category, []), truths[category], 0.50, self.task
                     ),
-                    "criterion": f"COCO AP@0.50, class '{name}', real-domain validation split",
+                    "criterion": (f"COCO AP@0.50, class '{name}', {_split_role(self.split)}"),
                 },
                 "with_class_score": {
                     "value": class_score.f1,
@@ -651,7 +656,7 @@ class SharedEvaluator:
                     "value": _mean_best_iou(prepared, class_truths, self.task),
                     "criterion": (
                         f"mean best mask IoU per ground-truth instance, class '{name}', "
-                        f"real-domain validation split '{self.split}'"
+                        f"{_split_role(self.split)}"
                     ),
                 }
                 class_figures["mask_AP50"] = {
@@ -659,8 +664,7 @@ class SharedEvaluator:
                         predicted.get(category, []), truths[category], 0.50, self.task
                     ),
                     "criterion": (
-                        f"COCO mask AP@0.50 (mask IoU), class '{name}', real-domain "
-                        f"validation split '{self.split}'"
+                        f"COCO mask AP@0.50 (mask IoU), class '{name}', {_split_role(self.split)}"
                     ),
                 }
             per_class[name] = class_figures

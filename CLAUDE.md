@@ -731,7 +731,8 @@ training wrapper are untouched by this path.
   the held-out `test` cohort must never decide which checkpoint, family or
   trial is kept. A run that names no split still selects on `val`, and the
   study records that canonical value as its fixed split. Held-out evaluation
-  is a separate step and is not implemented in this pipeline.
+  is the separate `polyx.pipeline.heldout` step described below; it is never part of a
+  fit or a search.
 - `protocol` in `conf/protocol/default.yaml` is framework-neutral and consumed
   unchanged: split, seed, epochs, batch, image size, confidence, optimizer, LR,
   momentum, weight decay, schedule, warmup, the benchmark augmentation subset,
@@ -844,6 +845,44 @@ training wrapper are untouched by this path.
   nor written, so a same-size label edit is always seen.
 - `campaign_app.py` is the multi-family multirun; `family.run_name` names the
   per-execution directory, so two detection variants can share one root.
+
+### Held-out test evaluation (`polyx.pipeline.heldout`)
+
+`python -m polyx.pipeline.heldout` is the separate step after selection closes:
+it scores one finished execution's frozen `checkpoints/best.pt` on the `test`
+fold through `SharedEvaluator`, at one confidence threshold. Predictions come
+from the frozen native weights (`YOLO.predict` plus the shared COCO converters,
+with the same prediction floor and per-category budget validation uses), never
+from a new Lightning run.
+
+```bash
+python -m polyx.pipeline.heldout --execution runs_train/benchmark/yolo_detection \
+    --output results/heldout/yolo_detection
+python -m polyx.pipeline.heldout --execution runs_train/benchmark/yolo_segmentation \
+    --output results/heldout/yolo_segmentation --confidence 0.25
+```
+
+- `--execution` and `--output` are required. `--dataset` names the test cohort
+  (a YOLO `data.yaml` or a canonical COCO store) and defaults to the dataset
+  declaration the execution recorded. `--confidence` defaults to
+  `protocol.confidence` and is recorded as the one operating point; it is
+  never tuned and no threshold is recommended. `--device` defaults to the
+  execution's backend device, and `--force` replaces an earlier result in
+  `--output`. Writing inside the execution directory is refused.
+- Only the Ultralytics detection and segmentation families are scored here;
+  Mask R-CNN's native checkpoint is a separate ticket. An execution without a
+  `completion.json` is refused, so only a frozen selected checkpoint is read.
+- The result is its own artifact: `heldout_test.json` plus `heldout_test.md`,
+  naming the source execution, the checkpoint path and SHA-256, the selected
+  epoch, the test-cohort hashes and fingerprint (the `test` fold's images,
+  labels and declaration), the confidence threshold and its source, the
+  class-aware operating-point F1 with localisation and COCO AP beside it, the
+  overlap rule and the split scored. The execution's `metrics.json`,
+  `training_state.json`, `progress.json` and `completion.json` are never
+  written; the execution tree is read-only for this action.
+- A dataset that declares no `test` split is reported as `NOT EVALUATED` on
+  stderr with exit status 2. Validation is never substituted: scoring it here
+  would quietly turn the held-out cohort into a second validation fold.
 
 ## 🖥 HPC glue (src/polyx/hpc/)
 
