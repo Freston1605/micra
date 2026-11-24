@@ -248,6 +248,7 @@ def test_mask_rcnn_trains_from_coco_masks_for_one_epoch(
         "config.yaml",
         "resolved_protocol.yaml",
         "provenance.json",
+        "execution_identity.json",
         "training_state.json",
         "metrics.json",
         "report.md",
@@ -286,6 +287,7 @@ def test_mask_rcnn_trains_from_coco_masks_for_one_epoch(
         "training_state.json",
         "progress.json",
         "completion.json",
+        "execution_identity.json",
     }
 
     # Mask R-CNN consumes the canonical COCO JSON directly: no second

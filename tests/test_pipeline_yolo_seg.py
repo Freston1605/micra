@@ -414,6 +414,7 @@ def test_yolo_seg_trains_from_coco_masks_for_one_epoch(
         "config.yaml",
         "resolved_protocol.yaml",
         "provenance.json",
+        "execution_identity.json",
         "training_state.json",
         "metrics.json",
         "report.md",

@@ -32,6 +32,7 @@ from polyx.pipeline.config import ExecutionConfig, config_to_dict, protocol_to_d
 from polyx.pipeline.dataset import ResolvedBoxDataset, dataset_fingerprint
 from polyx.pipeline.errors import PipelineError
 from polyx.pipeline.evaluation import SharedEvaluator
+from polyx.pipeline.identity import ExecutionIdentity
 from polyx.pipeline.lightning_loop import (
     ExecutionRecorder,
     TrainingOutcome,
@@ -43,10 +44,10 @@ from polyx.pipeline.lightning_loop import (
 )
 from polyx.pipeline.resume import (
     RecoveryState,
-    ResumeState,
     committed_checkpoint,
     has_committed_checkpoint,
 )
+from polyx.pipeline.weights import resolve_weights
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -64,49 +65,6 @@ def _try_read_json(path: Path) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return loaded if isinstance(loaded, dict) else None
-
-
-def _dataset_identity(
-    hashes: dict[str, str], expected: str | None, root: Path, *, resuming: bool
-) -> str:
-    """The digest a resumed execution must still match.
-
-    Weights, the best epoch's figures and the early-stopping state describe the
-    bytes that trained them. Comparing only the protocol let a relabelled image
-    or an edited COCO export keep the old checkpoint and publish provenance for
-    the new files. ``expected`` comes from the committed checkpoint, with the
-    progress heartbeat as the fallback for executions written before the
-    checkpoint carried it. A resume with neither record cannot be verified and
-    is refused, as it always was.
-    """
-    fingerprint = dataset_fingerprint(hashes)
-    if not resuming:
-        return fingerprint
-    if not expected:
-        raise PipelineError(
-            "execution.dataset_identity_unrecorded",
-            N_(
-                "cannot verify the dataset of %(path)s: the committed checkpoint records "
-                "no dataset identity, so start a new output directory instead of resuming"
-            ),
-            path=str(root),
-        )
-    if not hashes:
-        raise PipelineError(
-            "execution.dataset_identity_missing",
-            N_("cannot verify the dataset of %(path)s: it has no file hashes"),
-            path=str(root),
-        )
-    if expected != fingerprint:
-        raise PipelineError(
-            "execution.dataset_changed",
-            N_(
-                "the dataset behind %(path)s changed since its checkpoint was written; "
-                "start a new output directory instead of resuming over it"
-            ),
-            path=str(root),
-        )
-    return fingerprint
 
 
 def _completion_record(
@@ -142,45 +100,18 @@ def run_execution(
     resolves it during preparation.
     """
     layout = ArtifactLayout(config.output_dir)
-    if config.resume and layout.completion.is_file():
-        # A completed execution is never rebuilt; the completion record is the
-        # one authority, and it needs no checkpoint to be re-read.
-        metrics = _read_json(layout.metrics)
-        return {
-            "output_dir": layout.root,
-            "checkpoint": Path(str(_read_json(layout.completion)["checkpoint"])),
-            "selection": metrics["selection"],
-            "metrics": metrics,
-            "training_state": _read_json(layout.training_state),
-        }
-    resume_state: ResumeState | None = None
     recovery: RecoveryState | None = None
     if config.resume:
         # The checkpoint Lightning committed is the one recovery authority.
-        # The progress record is only a heartbeat: it may be stale, or absent.
+        # The progress record is only a heartbeat: it is never consulted for
+        # identity, protocol, dataset or an epoch decision.
         recovery = committed_checkpoint(config.output_dir)
         if recovery is None:
             raise RuntimeError(
                 "resume requested but no committed Lightning checkpoint exists at "
                 f"{layout.lightning_checkpoints}"
             )
-        if layout.progress.is_file():
-            try:
-                resume_state = ResumeState.load(layout.progress)
-            except RuntimeError:
-                # A heartbeat that cannot be read is still only a heartbeat;
-                # the checkpoint below carries every value recovery needs.
-                resume_state = None
-        recorded_protocol = recovery.protocol or (
-            resume_state.protocol if resume_state is not None else None
-        )
-        if recorded_protocol is not None and recorded_protocol != protocol_to_dict(config):
-            raise PipelineError(
-                "execution.protocol_changed",
-                N_("protocol changed since the checkpoint was written"),
-            )
-    layout.create()
-    if not config.resume:
+    else:
         # A fresh execution never reuses an execution directory: an existing
         # record could be inherited as this run's completion, or a stale
         # progress snapshot could resume the previous run's weights.
@@ -199,17 +130,19 @@ def run_execution(
                 path=str(layout.root),
             )
 
-    write_yaml(config_to_dict(config), layout.config)
-    write_yaml(protocol_to_dict(config), layout.resolved_protocol)
-    append_log(
-        layout.training_log,
-        f"family={config.family.name} backend={config.backend.name} resume={config.resume}",
+    # Staged or imported weights are an initialization, never a resume point.
+    # The identity records the verified digest when the weight is pinned and
+    # the declared name otherwise, so a moved node still matches.
+    resolved_weights = resolve_weights(
+        config.family,
+        weights_dir=config.weights_dir,
+        manifest=config.weights_manifest,
+    )
+    declared_identity = ExecutionIdentity.build(
+        config, weights=resolved_weights, dataset_fingerprint=""
     )
     if recovery is not None:
-        append_log(
-            layout.training_log,
-            f"resume from epoch={recovery.epochs_completed} checkpoint={recovery.checkpoint}",
-        )
+        declared_identity.require_static_matches(recovery.identity, path=layout.root)
 
     adapter = build_adapter(config.family, resolved_boxes=resolved_boxes)
     prepared = adapter.prepare(config)
@@ -221,6 +154,43 @@ def run_execution(
             N_("dataset audit failed: %(codes)s"),
             codes=", ".join(codes),
         )
+    if config.resume and not prepared.hashes:
+        raise PipelineError(
+            "execution.dataset_identity_missing",
+            N_("cannot verify the dataset of %(path)s: it has no file hashes"),
+            path=str(layout.root),
+        )
+    fingerprint = dataset_fingerprint(prepared.hashes)
+    identity = ExecutionIdentity.build(
+        config, weights=resolved_weights, dataset_fingerprint=fingerprint
+    )
+    if recovery is not None:
+        identity.require_matches(recovery.identity, path=layout.root)
+        if layout.completion.is_file():
+            # A completed execution is never rebuilt; the completion record is
+            # the one authority, and its identity has just been verified.
+            metrics = _read_json(layout.metrics)
+            return {
+                "output_dir": layout.root,
+                "checkpoint": Path(str(_read_json(layout.completion)["checkpoint"])),
+                "selection": metrics["selection"],
+                "metrics": metrics,
+                "training_state": _read_json(layout.training_state),
+            }
+
+    layout.create()
+    write_yaml(config_to_dict(config), layout.config)
+    write_yaml(protocol_to_dict(config), layout.resolved_protocol)
+    write_json(identity.to_dict(), layout.execution_identity)
+    append_log(
+        layout.training_log,
+        f"family={config.family.name} backend={config.backend.name} resume={config.resume}",
+    )
+    if recovery is not None:
+        append_log(
+            layout.training_log,
+            f"resume from epoch={recovery.epochs_completed} checkpoint={recovery.checkpoint}",
+        )
     if prepared.conversion is not None:
         append_log(
             layout.training_log,
@@ -229,14 +199,6 @@ def run_execution(
             f"cache_key={prepared.conversion['cache_key']} "
             f"cached={str(prepared.conversion['cached']).lower()}",
         )
-    recorded_fingerprint = (
-        (recovery.dataset_fingerprint if recovery is not None else None)
-        or (resume_state.dataset_fingerprint if resume_state is not None else None)
-        or None
-    )
-    fingerprint = _dataset_identity(
-        prepared.hashes, recorded_fingerprint, layout.root, resuming=config.resume
-    )
 
     evaluator = SharedEvaluator(
         prepared.ground_truth,
@@ -248,6 +210,7 @@ def run_execution(
         layout=layout,
         config=config,
         dataset_fingerprint=fingerprint,
+        identity=identity,
         evaluator=evaluator,
     )
     run = adapter.build(config, prepared, recorder)

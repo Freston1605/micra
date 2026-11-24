@@ -58,6 +58,35 @@ or a replaced photo changes it. A resume compares the digest and refuses a misma
 restoring weights that belong to other bytes. Only files in a resolved split
 count: a neighbouring folder of plates is not part of the dataset.
 
+## Execution identity
+
+The one record that says which training execution a Lightning checkpoint
+belongs to: the resolved family (name, framework, task and weights
+declaration), the **initialization-weight identity**, the protocol and the
+[dataset fingerprint](#dataset-fingerprint). It is written as
+`execution_identity.json` in the execution directory and embedded in every
+checkpoint the engine writes, so a resume compares the requested execution
+against the state it would restore. The initialization-weight identity is the
+verified SHA-256 digest when the run starts from pinned weights, and the
+declared name otherwise. A mismatch is refused by field; a checkpoint with no
+verifiable record is a legacy checkpoint and is not resumable.
+
+## Resume checkpoint
+
+The one Lightning checkpoint a resumed execution restores:
+`checkpoints/lightning/last.ckpt`, or the newest per-epoch file when no `last`
+exists. It is the authority for completed epochs, the kept checkpoint and its
+score, and early-stopping state. Its engine block carries the
+[execution identity](#execution-identity); the checkpoint is read only with
+restricted (`weights_only=True`) deserialization. Lightning records the best
+checkpoint as an absolute path, so the reference is resolved by file name
+inside the execution's own `checkpoints/lightning/` directory: a moved
+execution still resumes, while an external path is refused. The progress
+record is never a resume checkpoint, and staged or imported weights initialise
+a new run rather than continuing one. _Avoid_: progress snapshot (it is a
+heartbeat, not the resume authority), best.pt (the native export, not a
+Lightning resume point).
+
 ## Campaign
 
 One benchmark over several model families under the identical protocol: a single

@@ -127,6 +127,7 @@ def test_one_multirun_trains_every_family_under_the_same_protocol(
             "config.yaml",
             "resolved_protocol.yaml",
             "provenance.json",
+            "execution_identity.json",
             "training_state.json",
             "metrics.json",
             "report.md",

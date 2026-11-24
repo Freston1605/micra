@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Poly-X\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 14:19-0300\n"
+"POT-Creation-Date: 2026-11-24 14:21-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -6640,31 +6640,31 @@ msgstr "define POLYX_WEIGHTS_DIR y POLYX_WEIGHTS_MANIFEST antes de preparar los 
 msgid "pinned weights are missing or unverified; stage them with --url on a networked node"
 msgstr "faltan los pesos fijados o no se pudieron verificar; prepáralos con --url en un nodo con red"
 
-#: src/polyx/pipeline/artifacts.py:161
+#: src/polyx/pipeline/artifacts.py:166
 msgid "Training execution report"
 msgstr "Informe de ejecución del entrenamiento"
 
-#: src/polyx/pipeline/artifacts.py:163
+#: src/polyx/pipeline/artifacts.py:168
 msgid "Family"
 msgstr "Familia"
 
-#: src/polyx/pipeline/artifacts.py:164
+#: src/polyx/pipeline/artifacts.py:169
 msgid "Backend"
 msgstr "Backend"
 
-#: src/polyx/pipeline/artifacts.py:165
+#: src/polyx/pipeline/artifacts.py:170
 msgid "Selection metric"
 msgstr "Métrica de selección"
 
-#: src/polyx/pipeline/artifacts.py:167
+#: src/polyx/pipeline/artifacts.py:172
 msgid "Figures"
 msgstr "Figuras"
 
-#: src/polyx/pipeline/artifacts.py:179
+#: src/polyx/pipeline/artifacts.py:184
 msgid "Early stopping"
 msgstr "Parada anticipada"
 
-#: src/polyx/pipeline/artifacts.py:173
+#: src/polyx/pipeline/artifacts.py:178
 msgid "Per class"
 msgstr "Por clase"
 
@@ -6837,39 +6837,17 @@ msgstr ""
 "%(path)s está declarado tanto en el split %(first)s como en el %(second)s; una imagen solo puede"
 " pertenecer a un pliegue"
 
-#: src/polyx/pipeline/execution.py:88
-#, python-format
-msgid ""
-"cannot verify the dataset of %(path)s: the committed checkpoint records no dataset identity, so "
-"start a new output directory instead of resuming"
-msgstr ""
-"no se puede verificar el dataset de %(path)s: el checkpoint confirmado no registra la identidad "
-"del dataset; inicie un directorio de salida nuevo en lugar de reanudar"
-
-#: src/polyx/pipeline/execution.py:97
-#, python-format
-msgid "cannot verify the dataset of %(path)s: it has no file hashes"
-msgstr "no se puede verificar el dataset de %(path)s: no tiene hashes de archivo"
-
-#: src/polyx/pipeline/execution.py:103
-#, python-format
-msgid ""
-"the dataset behind %(path)s changed since its checkpoint was written; start a new output "
-"directory instead of resuming over it"
-msgstr ""
-"el dataset de %(path)s cambió desde que se escribió su checkpoint; inicie un directorio de "
-"salida nuevo en lugar de reanudar sobre él"
-
-#: src/polyx/pipeline/execution.py:221
+#: src/polyx/pipeline/execution.py:154
 #, python-format
 msgid "dataset audit failed: %(codes)s"
 msgstr "la auditoría del dataset falló: %(codes)s"
 
-#: src/polyx/pipeline/execution.py:180
-msgid "protocol changed since the checkpoint was written"
-msgstr "el protocolo cambió desde que se escribió el checkpoint"
+#: src/polyx/pipeline/execution.py:160
+#, python-format
+msgid "cannot verify the dataset of %(path)s: it has no file hashes"
+msgstr "no se puede verificar el dataset de %(path)s: no tiene hashes de archivo"
 
-#: src/polyx/pipeline/execution.py:195
+#: src/polyx/pipeline/execution.py:126
 #, python-format
 msgid ""
 "%(path)s already holds an execution; pass resume=true to continue it or choose a new output "
@@ -6969,10 +6947,29 @@ msgstr "reemplazar un resultado de la cohorte retenida existente en --output"
 msgid "the test cohort of %(path)s is missing %(image)s"
 msgstr "a la cohorte de prueba de %(path)s le falta %(image)s"
 
+#: src/polyx/pipeline/identity.py:159
+#, python-format
+msgid ""
+"cannot resume %(path)s: %(field)s changed since its checkpoint was written; start a new output "
+"directory instead of resuming over it"
+msgstr ""
+"no se puede reanudar %(path)s: %(field)s cambió desde que se escribió su checkpoint; inicie un "
+"directorio de salida nuevo en lugar de reanudar sobre él"
+
 #: src/polyx/pipeline/optuna_sweeper.py:160
 #, python-format
 msgid "recovery of interrupted trials failed (%(count)d); the study was not extended"
 msgstr "falló la recuperación de ensayos interrumpidos (%(count)d); el estudio no se amplió"
+
+#: src/polyx/pipeline/resume.py:133
+#, python-format
+msgid ""
+"cannot resume %(path)s: the committed checkpoint at %(checkpoint)s carries no verifiable "
+"execution identity; it is left untouched, so start a new output directory instead of resuming"
+msgstr ""
+"no se puede reanudar %(path)s: el checkpoint confirmado en %(checkpoint)s no tiene una identidad"
+" de ejecución verificable; se deja intacto, así que inicie un directorio de salida nuevo en "
+"lugar de reanudar"
 
 #: src/polyx/pipeline/seg_conversion.py:184
 #, python-format
@@ -7189,4 +7186,7 @@ msgstr ""
 #~ msgstr ""
 #~ "Apple Silicon detectado pero torch no expone MPS."
 #~ " Reinstala PyTorch desde el instalador de Poly-X."
+
+#~ msgid "protocol changed since the checkpoint was written"
+#~ msgstr "el protocolo cambió desde que se escribió el checkpoint"
 
