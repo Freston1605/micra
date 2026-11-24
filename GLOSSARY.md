@@ -83,7 +83,10 @@ One suggested configuration inside a study, executed as one normal training
 run. A trial changes only declared protocol hyperparameters; split, seed,
 augmentation subset and evaluator stay fixed. Trials are independent processes,
 so the study does not prune across them — Lightning's early stopping stops an
-individual trial.
+individual trial. A trial killed by a time limit keeps its study number and is
+recovered from its committed Lightning checkpoint, exactly as a single
+execution is: the checkpoint, not the progress record, says which epoch
+continues and which score the study receives.
 
 ## Sweeper
 

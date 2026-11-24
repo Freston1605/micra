@@ -128,15 +128,16 @@ Set `POLYX_CAMPAIGN_ROOT` to the previous campaign root and `POLYX_RESUME=true`,
 then submit again. The job passes `resume=true` to every family and each family
 decides for itself:
 
-- a family with a `progress.json` resumes from its Lightning checkpoint
+- a family with a committed Lightning checkpoint resumes from it
   (`checkpoints/lightning/last.ckpt`, which also restores the early-stopping
-  and checkpoint callbacks' state); completed epochs are not rerun;
+  and checkpoint callbacks' state); completed epochs are not rerun, and a
+  missing or stale `progress.json` does not change where it resumes;
 - a family whose `completion.json` already exists for the same protocol is
   **skipped**, so a finished execution's metrics are never recomputed or
   overwritten. The record is written atomically and last, after metrics,
   checkpoint, provenance and report; a final epoch with missing artifacts is
   published, not retrained;
-- a family that never started runs normally, because there is no snapshot to
+- a family that never started runs normally, because there is no checkpoint to
   resume;
 - a fresh run aimed at an existing execution directory is refused: pass
   `resume=true` to continue it or choose a new directory, so a new run can never
@@ -144,8 +145,7 @@ decides for itself:
 - a root that holds an execution for a different protocol **or a changed
   dataset** is refused; start a new campaign root instead.
 
-The engine still refuses a resume without a snapshot, or with a snapshot that
-has no Lightning checkpoint.
+The engine still refuses a resume without a committed Lightning checkpoint.
 
 ```sh
 POLYX_CAMPAIGN_ROOT="$POLYX_HPC_WORK/results/campaign-20261118-101500" \
