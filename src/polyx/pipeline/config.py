@@ -19,13 +19,45 @@ from typing import Any, cast
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
+from polyx.core.i18n import N_
 from polyx.core.paths import SEGMENTATION_DATASETS_DIR
+from polyx.pipeline.errors import PipelineError
 
 CONF_DIR = Path(__file__).resolve().parent / "conf"
 
 #: The two tasks an adapter can execute. Detection consumes YOLO box labels;
 #: segmentation consumes the canonical COCO mask dataset.
 _TASKS = ("detect", "segment")
+
+#: The one fold that may decide a kept checkpoint, family or trial. The
+#: held-out test cohort is reserved for the final evaluation: a training
+#: execution, a campaign job and a study trial all select on validation only,
+#: so the fold that selects can never be the fold that reports.
+SELECTION_SPLIT = "val"
+
+
+def validate_selection_split(value: object) -> str:
+    """Return the canonical selection split, refusing every other fold.
+
+    Every entry point calls this before a fit or a trial: the composed
+    protocol for a single execution or campaign job, and the resolved study
+    configuration before Optuna records its first trial. The canonical value
+    is named in the error together with the reason, so an override that tries
+    to select on the test fold says what to set instead.
+    """
+    name = str(value).strip()
+    if name != SELECTION_SPLIT:
+        raise PipelineError(
+            "protocol.selection_split",
+            N_(
+                "protocol.split must be '%(split)s': model selection always reads the "
+                "validation fold, because the held-out test cohort must never decide "
+                "which checkpoint, family or trial is kept"
+            ),
+            split=SELECTION_SPLIT,
+        )
+    return name
+
 
 #: Augmentations every first-wave family can express identically. The
 #: benchmark campaign may not declare anything outside this set: a transform
@@ -75,7 +107,7 @@ class Protocol:
     refuses it and refuses any subset entry outside the common set.
     """
 
-    split: str = "val"
+    split: str = SELECTION_SPLIT
     seed: int = 42
     epochs: int = 150
     batch: int = 8
@@ -186,8 +218,9 @@ def _build_protocol(raw: dict) -> Protocol:
             "early_stopping.restore_best=false is not supported: the kept epoch "
             "is always exported as best.pt"
         )
+    split = validate_selection_split(raw["split"])
     return Protocol(
-        split=str(raw["split"]),
+        split=split,
         seed=int(raw["seed"]),
         epochs=int(raw["epochs"]),
         batch=int(raw["batch"]),

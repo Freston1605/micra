@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 13:47-0300\n"
+"POT-Creation-Date: 2026-11-24 13:50-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -6152,6 +6152,13 @@ msgstr ""
 msgid "Audit"
 msgstr ""
 
+#: src/polyx/pipeline/config.py:52
+#, python-format
+msgid ""
+"protocol.split must be '%(split)s': model selection always reads the validation fold, because "
+"the held-out test cohort must never decide which checkpoint, family or trial is kept"
+msgstr ""
+
 #: src/polyx/pipeline/dataset.py:160
 #, python-format
 msgid ""
@@ -6298,7 +6305,7 @@ msgid ""
 "annotation tool."
 msgstr ""
 
-#: src/polyx/pipeline/sweep_app.py:63
+#: src/polyx/pipeline/sweep_app.py:64
 #, python-format
 msgid "study trial %(trial)d is already running in another process"
 msgstr ""
@@ -6333,5 +6340,12 @@ msgstr ""
 #: src/polyx/pipeline/sweep_best.py:86
 #, python-format
 msgid "the winner is study trial %(trial)d but its artifact is missing under %(root)s"
+msgstr ""
+
+#: src/polyx/pipeline/sweep_space.py:51
+#, python-format
+msgid ""
+"protocol.split is fixed to '%(split)s' and cannot be searched: the held-out test cohort must "
+"never decide which trial is kept"
 msgstr ""
 

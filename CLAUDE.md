@@ -724,6 +724,14 @@ training wrapper are untouched by this path.
   fail to beat `min_delta`. `save_last=True` keeps `last.ckpt` and the
   per-epoch files stay immutable; an atomic `CheckpointIO` renames each one
   into place so a SLURM time limit cannot leave a torn resume point.
+- The selection split is fixed to `val` (`config.validate_selection_split`).
+  A single execution, a campaign job and a study trial all call the one guard
+  before their first fit or trial, so `protocol.split` cannot be composed,
+  overridden or searched to another fold. The error names `val` and says why:
+  the held-out `test` cohort must never decide which checkpoint, family or
+  trial is kept. A run that names no split still selects on `val`, and the
+  study records that canonical value as its fixed split. Held-out evaluation
+  is a separate step and is not implemented in this pipeline.
 - `protocol` in `conf/protocol/default.yaml` is framework-neutral and consumed
   unchanged: split, seed, epochs, batch, image size, confidence, optimizer, LR,
   momentum, weight decay, schedule, warmup, the benchmark augmentation subset,

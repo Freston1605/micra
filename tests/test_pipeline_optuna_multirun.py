@@ -554,7 +554,7 @@ def test_a_lease_from_another_node_is_judged_by_activity(
     [
         (
             "protocol.split=choice(val,train)",
-            "search space may only declare protocol hyperparameters",
+            "protocol.split is fixed to 'val' and cannot be searched",
         ),
         (
             "protocol.seed=choice(1,2)",
@@ -591,6 +591,28 @@ def test_a_sweep_cannot_search_the_fixed_benchmark_fields(
     assert not (output / "trials").exists(), "a refused sweep trained a trial"
 
 
+def test_a_study_refuses_a_selection_split_other_than_val(
+    tmp_path: Path,
+    tiny_dataset: Path,
+    work_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A study fixed on the test fold never trains its first trial."""
+    output = work_env / "experiments" / "wrong-split"
+    _install_fakes(monkeypatch, [_boxes_prediction()])
+
+    with pytest.raises(BaseException):  # noqa: B017 - Hydra converts the failure
+        _run_multirun(monkeypatch, output, tiny_dataset, extra=("protocol.split=test",))
+
+    captured = capsys.readouterr()
+    error = captured.err + captured.out
+    assert "'val'" in error, "the error must name the canonical split"
+    assert "held-out" in error, "the error must say why the split is fixed"
+    assert not (output / "trials").exists(), "a refused study trained a trial"
+    assert not (output / "sweep_config.yaml").exists(), "a refused study was recorded"
+
+
 def test_the_glossary_and_the_adr_ship_with_the_sweep() -> None:
     """The vocabulary and the decision are part of the behaviour, not later."""
     root = Path(__file__).resolve().parents[1]
@@ -604,3 +626,14 @@ def test_the_glossary_and_the_adr_ship_with_the_sweep() -> None:
     assert "# ADR-0010" in text
     assert "with-class score" in text
     assert "no cross-process pruning" in text.lower()
+
+
+def test_the_glossary_separates_the_selection_split_from_the_held_out_test_split() -> None:
+    """Two folds, two jobs: one selects, the other is only read at the end."""
+    root = Path(__file__).resolve().parents[1]
+    glossary = (root / "GLOSSARY.md").read_text(encoding="utf-8")
+    assert "## Selection split\n" in glossary
+    assert "## Held-out test split\n" in glossary
+    selection = glossary.split("## Selection split\n", 1)[1].split("\n## ", 1)[0]
+    assert "`val`" in selection
+    assert "held-out" in selection.lower()

@@ -24,6 +24,28 @@ a benchmark. The resolved protocol is written verbatim into each training
 execution's artifacts. _Avoid_: hyperparameters (too narrow — it also fixes
 the split and the evaluator).
 
+## Selection split
+
+The dataset fold a training execution, a campaign job or a study trial reads
+to decide what is kept: the checkpoint, the ranked family or the trial value.
+It is always `val`, and it is fixed rather than configurable: a composed
+protocol, a campaign job or a study override that names any other fold
+(`train`, `test`, …) is refused before the first fit or trial, with an error
+that names `val` and the reason. Selection must stay independent of the
+report, so the fold that chooses is never the fold that is published as the
+final result. The default is unchanged: a run that names no split selects on
+`val`. Contrast **held-out test split**.
+
+## Held-out test split
+
+The `test` fold of a dataset: images reserved for the final, one-time
+evaluation of the kept model. It is never read while training, validating,
+selecting a checkpoint, ranking a campaign family or optimizing a study
+trial, and it never contributes the selection score. Scoring it during
+selection would quietly turn it into a second validation fold and make the
+reported number optimistic. Held-out evaluation is a separate step from the
+training pipeline, not part of it.
+
 ## Dataset fingerprint
 
 The one digest over the exact files a headless execution trains and scores on:
