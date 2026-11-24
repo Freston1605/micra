@@ -817,11 +817,17 @@ training wrapper are untouched by this path.
   `sweep_space.py` owns the one allowlist both the config and the plugin check,
   so split, seed, augmentation subset and the evaluator cannot be swept, and
   the direction is always maximize. `PolyxOptunaSweeper` injects the actual
-  trial id, and before asking for new trials it recovers every `RUNNING` trial:
-  resume its checkpoint, retry its recorded parameters, or tell the score its
-  finished execution already wrote. Two leases under `trials/.locks/` keep
-  runners apart: `trial_NNN.lock` while a job trains it and
-  `trial_NNN.recovery.lock` while a runner relaunches it. A lease whose owner is
+  trial id, and before asking for new trials it recovers every `RUNNING` trial
+  under the same checkpoint authority as a single execution: a trial whose
+  directory holds a committed Lightning checkpoint resumes from it and never
+  retrains a committed epoch, one whose directory holds none retries its
+  recorded parameters in a clean directory, and one whose execution finished
+  but whose score never reached Optuna is told from its own published metrics.
+  Two leases under `trials/.locks/` keep runners apart: `trial_NNN.lock` while
+  a job trains it and `trial_NNN.recovery.lock` while a runner relaunches it.
+  The training lease is taken before the trial directory is prepared, so a
+  duplicate job stops at the lease instead of deleting the checkpoints and logs
+  of the process that owns the trial. A lease whose owner is
   gone — a same-host liveness probe, or no `progress.json` activity for
   `POLYX_LEASE_TTL` when the owner is on another node — is taken over. Every
   trial writes `record.json` (`sweep_record.py`), and the reader compares the

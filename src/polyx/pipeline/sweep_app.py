@@ -54,8 +54,10 @@ def objective(cfg: DictConfig) -> float:
     trial_id = int(raw["sweep_trial_id"])
     study = _study_record(raw)
     _persist_study(root, study)
-    output = _trial_output_dir(root, trial_id)
-    lease = acquire_trial_lease(output)
+    # The lease comes first: preparing the directory may delete what a previous
+    # attempt left behind, which is only safe once this runner owns the trial.
+    # A duplicate job stops at the lease with that work intact.
+    lease = acquire_trial_lease(trial_directory(root, trial_id))
     if lease is None:
         # This trial is already being trained elsewhere; returning a value
         # here would score one runner's work twice.
@@ -65,6 +67,7 @@ def objective(cfg: DictConfig) -> float:
             trial=trial_id,
         )
     try:
+        output = _trial_output_dir(root, trial_id)
         record = {
             "trial_id": trial_id,
             "parameters": _sampled_parameters(raw),
@@ -156,7 +159,12 @@ def _sampled_parameters(raw: dict) -> dict[str, Any]:
 
 
 def _trial_output_dir(root: Path, trial_id: int) -> Path:
-    """The stable execution directory for one study trial id."""
+    """The stable execution directory for one study trial id.
+
+    Only called while this process holds the trial's lease: the decision below
+    deletes whatever the previous attempt left behind when nothing on disk can
+    be resumed, and a duplicate runner must never do that to a live one.
+    """
     directory = trial_directory(root, trial_id)
     if has_committed_checkpoint(directory):
         return directory

@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Poly-X\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 14:08-0300\n"
+"POT-Creation-Date: 2026-11-24 14:12-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -6995,7 +6995,7 @@ msgstr ""
 "YOLO; el cargador fijado las colapsaría en un solo objetivo. Combine o elimine la duplicada en "
 "la herramienta de anotación."
 
-#: src/polyx/pipeline/sweep_app.py:64
+#: src/polyx/pipeline/sweep_app.py:66
 #, python-format
 msgid "study trial %(trial)d is already running in another process"
 msgstr "el ensayo %(trial)d del estudio ya se está ejecutando en otro proceso"
