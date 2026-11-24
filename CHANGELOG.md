@@ -44,6 +44,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `gh attestation verify` — with the pre-release rule stated once.
 
 ### Changed
+- **Model selection is fixed to the validation split (#238).** A single
+  training execution, a campaign job and a study trial refuse any
+  `protocol.split` other than `val` before the first fit or trial — composed,
+  overridden or searched — with an error that names `val` and says why: the
+  held-out test cohort must never decide which checkpoint, family or trial is
+  kept. The default is unchanged, a run that names no split still selects on
+  `val`, and the study records that canonical value as its fixed split.
+  `GLOSSARY.md` separates the **selection split** from the **held-out test
+  split**, and the pipeline section of `CLAUDE.md` states the rule.
 - **PyTorch moves to 2.13.0 and torchvision to 0.28.0 (#203).** The pair is
   raised in `pyproject.toml` and `uv.lock`, closing the five advisories
   Dependabot reports against 2.7.1/0.22.1, the last of which clears at 2.13.0.

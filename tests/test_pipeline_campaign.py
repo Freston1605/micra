@@ -79,6 +79,7 @@ def _run_campaign(
     *,
     families: tuple[str, ...] = FAMILIES,
     resume: bool = False,
+    extra: tuple[str, ...] = (),
 ) -> None:
     from polyx.pipeline import campaign_app
 
@@ -99,6 +100,7 @@ def _run_campaign(
     ]
     if resume:
         overrides.append("resume=true")
+    overrides.extend(extra)
     monkeypatch.setattr(sys, "argv", overrides)
     campaign_app.campaign()
 
@@ -247,6 +249,36 @@ def test_two_detection_variants_coexist_in_one_campaign(
     assert v11["weights"] == "yolo11n.pt"
     assert (root / "hydra" / "yolo_detection_v11").is_dir()
     assert (root / "yolo_detection_v11" / "metrics.json").is_file()
+
+
+def test_a_campaign_refuses_a_selection_split_other_than_val(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One wrong split fails the whole multirun; no family is trained or skipped."""
+    data_yaml = build_tiny_dataset(tmp_path / "detection")
+    store = _imported_store(tmp_path)
+    root = tmp_path / "campaign"
+    _install_framework_doubles(monkeypatch)
+
+    with pytest.raises(BaseException):  # noqa: B017 - Hydra converts the failure
+        _run_campaign(
+            monkeypatch,
+            root,
+            data_yaml,
+            store,
+            tmp_path / "scratch",
+            families=("yolo_detection", "yolo_segmentation"),
+            extra=("protocol.split=test",),
+        )
+
+    captured = capsys.readouterr()
+    error = captured.err + captured.out
+    assert "'val'" in error, "the error must name the canonical split"
+    assert "held-out" in error, "the error must say why the split is fixed"
+    for family in ("yolo_detection", "yolo_segmentation"):
+        assert not (root / family / "config.yaml").exists(), f"{family} started a fit"
+        assert not (root / family / "metrics.json").exists()
+        assert not (root / family / "checkpoints").exists()
 
 
 def test_the_campaign_refuses_mismatched_or_synthetic_cohorts(

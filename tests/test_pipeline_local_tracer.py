@@ -400,6 +400,7 @@ def test_patience_is_honoured_and_protocol_defaults_are_stable(
     assert state["early_stopping"]["stopped_early"] is True
     # Untouched defaults are the documented ones.
     protocol = yaml.safe_load((output / "resolved_protocol.yaml").read_text(encoding="utf-8"))
+    assert protocol["split"] == "val"
     assert protocol["epochs"] == 8  # overridden above
     assert protocol["batch"] == 8
     assert protocol["image_size"] == 1280
@@ -414,6 +415,37 @@ def test_patience_is_honoured_and_protocol_defaults_are_stable(
     assert protocol["early_stopping"]["mode"] == "max"
     assert protocol["early_stopping"]["patience"] == 2  # overridden above
     assert protocol["early_stopping"]["min_delta"] == pytest.approx(0.001)
+
+
+@pytest.mark.parametrize("split", ["test", "train", "holdout"])
+def test_a_training_execution_refuses_any_selection_split_other_than_val(
+    tmp_path: Path,
+    tiny_dataset: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    selected_language,
+    split: str,
+) -> None:
+    """The held-out test cohort never decides which checkpoint is kept.
+
+    The refusal must land before the first fit and before any execution
+    artifact exists, so a wrong split cannot leave a half-trained folder that
+    a reader mistakes for a result.
+    """
+    selected_language("en")
+    output = tmp_path / "executions" / "not-val"
+    code = _command(
+        f"data_yaml={tiny_dataset}",
+        f"output_dir={output}",
+        "protocol.epochs=1",
+        f"protocol.split={split}",
+    )
+
+    assert code == 1
+    error = capsys.readouterr().err
+    assert "'val'" in error, "the error must name the canonical split"
+    assert "held-out" in error, "the error must say why the split is fixed"
+    assert not output.exists(), "a refused execution wrote artifacts"
 
 
 def test_interrupted_execution_resumes_from_the_last_checkpoint(
@@ -654,7 +686,10 @@ def test_headless_box_preflight_names_incompatible_dataset_inputs(
         source = tiny_dataset.read_text(encoding="utf-8")
         tiny_dataset.write_text(source.replace("val: images/val", "val: val.txt"), encoding="utf-8")
     elif problem == "missing-split":
-        overrides = ["protocol.split=holdout"]
+        source = tiny_dataset.read_text(encoding="utf-8")
+        tiny_dataset.write_text(
+            source.replace("val: images/val", "val: images/absent"), encoding="utf-8"
+        )
         offending = tiny_dataset
     elif problem == "legacy-label":
         offending = image

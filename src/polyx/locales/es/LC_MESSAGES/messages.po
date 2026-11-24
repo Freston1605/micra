@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Poly-X\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-20 19:00-0300\n"
+"POT-Creation-Date: 2026-11-24 13:35-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -6719,6 +6719,16 @@ msgstr "Primer lote estratificado"
 msgid "Audit"
 msgstr "Auditoría"
 
+#: src/polyx/pipeline/config.py:52
+#, python-format
+msgid ""
+"protocol.split must be '%(split)s': model selection always reads the validation fold, because "
+"the held-out test cohort must never decide which checkpoint, family or trial is kept"
+msgstr ""
+"protocol.split debe ser '%(split)s': la selección del modelo siempre lee el split de validación,"
+" porque la cohorte de prueba retenida nunca debe decidir qué checkpoint, familia o ensayo se "
+"conserva"
+
 #: src/polyx/pipeline/dataset.py:160
 #, python-format
 msgid ""
@@ -6886,7 +6896,7 @@ msgstr ""
 "YOLO; el cargador fijado las colapsaría en un solo objetivo. Combine o elimine la duplicada en "
 "la herramienta de anotación."
 
-#: src/polyx/pipeline/sweep_app.py:62
+#: src/polyx/pipeline/sweep_app.py:63
 #, python-format
 msgid "study trial %(trial)d is already running in another process"
 msgstr "el ensayo %(trial)d del estudio ya se está ejecutando en otro proceso"
@@ -6922,6 +6932,15 @@ msgstr "no se puede cargar el estudio %(study)s en %(storage)s"
 #, python-format
 msgid "the winner is study trial %(trial)d but its artifact is missing under %(root)s"
 msgstr "el ganador es el trial %(trial)d del estudio, pero falta su artefacto en %(root)s"
+
+#: src/polyx/pipeline/sweep_space.py:51
+#, python-format
+msgid ""
+"protocol.split is fixed to '%(split)s' and cannot be searched: the held-out test cohort must "
+"never decide which trial is kept"
+msgstr ""
+"protocol.split está fijado en '%(split)s' y no puede buscarse: la cohorte de prueba retenida "
+"nunca debe decidir qué ensayo se conserva"
 
 #~ msgid ""
 #~ "The language will be applied when you reopen "

@@ -27,6 +27,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from polyx.core.i18n import N_
 from polyx.pipeline.artifacts import write_yaml
+from polyx.pipeline.config import SELECTION_SPLIT, validate_selection_split
 from polyx.pipeline.errors import PipelineError
 from polyx.pipeline.optuna_sweeper import install_trial_id_passthrough
 from polyx.pipeline.sweep_record import (
@@ -94,6 +95,10 @@ def _study_record(raw: dict[str, Any] | None = None) -> dict[str, Any]:
     params = dict(sweeper.get("params") or {})
     validate_search_space(params)
     protocol = (raw or {}).get("protocol") or {}
+    # The study's fixed selection split is the canonical one, verified here
+    # before the first trial and before the identity is written: a study
+    # cannot be recorded around a test-fold selection.
+    split = validate_selection_split(protocol.get("split", SELECTION_SPLIT))
     return {
         "study_name": str(sweeper.get("study_name") or "polyx-optuna"),
         "storage": str(sweeper.get("storage") or ""),
@@ -103,7 +108,7 @@ def _study_record(raw: dict[str, Any] | None = None) -> dict[str, Any]:
         # outside the search space, so recording them is what lets a reader
         # verify that two sweeps ran under one methodology.
         "fixed": {
-            "split": str(protocol.get("split", "")),
+            "split": split,
             "seed": int(protocol.get("seed", 0)),
             "augmentation_subset": list(protocol.get("augmentation_subset") or []),
             "evaluator": "polyx.pipeline.evaluation.SharedEvaluator",
