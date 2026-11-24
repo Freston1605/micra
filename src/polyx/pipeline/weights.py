@@ -52,6 +52,9 @@ class ResolvedWeights:
     name: str
     path: Path | None
     verified: bool
+    #: The manifest digest a pinned file was verified against; ``None`` when
+    #: the execution uses a framework default or an architecture declaration.
+    digest: str | None = None
 
     def describe(self) -> str:
         """The value recorded in ``training_state.json``."""
@@ -155,4 +158,9 @@ def resolve_weights(
         raise WeightResolutionError(
             f"weight {staged!r} is present but not verified: {exc}"
         ) from exc
-    return ResolvedWeights(name=name, path=path.resolve(), verified=True)
+    return ResolvedWeights(
+        name=name,
+        path=path.resolve(),
+        verified=True,
+        digest=str(entries[staged]).lower(),
+    )

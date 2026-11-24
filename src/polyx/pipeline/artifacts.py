@@ -42,6 +42,11 @@ class ArtifactLayout:
         return self.root / "provenance.json"
 
     @property
+    def execution_identity(self) -> Path:
+        """The resolved family, weights, protocol and dataset of this execution."""
+        return self.root / "execution_identity.json"
+
+    @property
     def training_state(self) -> Path:
         return self.root / "training_state.json"
 
@@ -193,6 +198,7 @@ def artifact_manifest(layout: ArtifactLayout) -> dict[str, Any]:
         "config": str(layout.config),
         "resolved_protocol": str(layout.resolved_protocol),
         "provenance": str(layout.provenance),
+        "execution_identity": str(layout.execution_identity),
         "training_state": str(layout.training_state),
         "progress": str(layout.progress),
         "metrics": str(layout.metrics),

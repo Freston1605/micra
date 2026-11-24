@@ -115,10 +115,11 @@ for every family:
 ```
 config.yaml            # fully resolved configuration
 resolved_protocol.yaml # the protocol exactly as the adapter consumed it
+execution_identity.json # family, weights identity, protocol, dataset fingerprint
 provenance.json        # git commit, dataset hashes, audit, dataset source, conversion
 training_state.json    # adapter state, AMP precision, early-stopping decisions
 metrics.json           # named figures, per-class figures, selection criterion
-progress.json          # atomic per-epoch resume snapshot
+progress.json          # atomic per-epoch heartbeat (never a resume authority)
 report.md              # human-readable summary, criteria included
 logs/training.log      # plain-text execution log
 checkpoints/best.pt    # best live weights, selected by with-class F1
@@ -128,13 +129,16 @@ checkpoints/lightning/last.ckpt          # the resume point Lightning writes
 completion.json        # written last, only after every required artifact exists
 ```
 
-`completion.json` is the completion authority. A campaign skips a family only
-when it exists under the same protocol; a family with a progress snapshot but
-no completion resumes, and a final epoch already on disk is published rather
-than retrained. The log line is written before completion, and every JSON
-artifact is published atomically. A fresh execution refuses an output directory
-that already holds an execution — pass `resume=true` to continue it or choose a
-new directory — so a new run can never inherit a stale completion marker.
+`completion.json` is the completion authority. A campaign verifies a family's
+execution identity and dataset fingerprint before reusing a recorded completion
+— a changed dataset or changed weights is refused rather than skipped — and
+reports `SKIPPED` only after that check passes; a family with a Lightning
+checkpoint but no completion resumes, and a final epoch already on disk is
+published rather than retrained. The log line is written before completion, and
+every JSON artifact is published atomically. A fresh execution refuses an
+output directory that already holds an execution — pass `resume=true` to
+continue it or choose a new directory — so a new run can never inherit a stale
+completion marker.
 
 `provenance.json` always names the dataset source (`yolo_boxes` or
 `coco_instances`). A YOLO-seg execution also records its job-time conversion:
@@ -401,26 +405,50 @@ once in `build_trainer`:
 
 The family-native export (`epoch_NNN.pt`, and `best.pt` restored from the kept
 checkpoint) keeps its historical shape for compatibility. An Ultralytics `.pt`
-is not a Lightning checkpoint and is never used for resume. If a progress
-snapshot has no Lightning checkpoint (one written before this behaviour
-existed), the execution refuses to resume instead of silently restarting the
-epoch loop.
+is not a Lightning checkpoint and is never used for resume. Staged or imported
+weights initialise a new run; they are an initialization, not a resume point.
+If a resume request has no Lightning checkpoint, the execution refuses instead
+of silently restarting the epoch loop.
+
+A checkpoint is bound to one execution. `execution_identity.json` and the
+checkpoint's own engine block carry the same record: the resolved family
+(name, framework, task and weights declaration), the initialization-weight
+identity, the protocol and the dataset fingerprint. A pinned weight is
+identified by the SHA-256 digest verified against the manifest, so the record
+survives a move to another node; an unpinned weight is identified by its
+declared name. Resume compares every part and refuses a mismatch with an error
+that names the field — a compatible tensor shape does not make another family,
+variant, initialization or protocol the same execution. The progress heartbeat
+is never consulted for identity, an epoch count, a winner or a stop.
+
+The Lightning checkpoint also records its best file as an absolute path.
+Moving the execution makes that prefix stale, so the reference is verified
+before it is resolved by file name inside the execution's own
+`checkpoints/lightning/` directory: the old prefix is accepted only when it is
+that same position in another checkout and its directory no longer exists, and
+a reference anywhere else is refused — even when a file of the same name
+exists locally — rather than read from an external location. Every checkpoint
+read the
+pipeline owns — recovery metadata, epoch inspection, `Trainer.fit` resume and
+the publication re-validation — uses restricted `weights_only=True` loading,
+with no unrestricted fallback. A checkpoint that needs a wider unpickler, or
+that carries no verifiable identity record, is a legacy checkpoint: it is
+refused with an explanation and left untouched, because it cannot be proven to
+belong to this execution.
 
 Publication re-validates the kept checkpoint once and scores that run, rather
 than carrying the last epoch's figures forward. `metrics.json` and `best.pt`
 therefore always describe the same weights, including after a resume whose
-remaining epochs never improved. The progress record also carries the fit's own
-record — the precision Lightning actually ran, the device, the verified weights
-and the augmentation — so a publication recovered after the last epoch states
-the same facts instead of inventing them.
+remaining epochs never improved. The committed checkpoint also carries the
+fit's own record — the precision Lightning actually ran, the device, the
+verified weights and the augmentation — so a publication recovered after the
+last epoch states the same facts instead of inventing them.
 
 The snapshot also names the dataset it trained on, as one digest over every
 image and label it resolved. A resume compares that digest against the dataset
 the new invocation resolved and refuses a mismatch: relabelled images or an
 edited COCO export are a different dataset, and the kept weights and best
-figures belong to the bytes that produced them. The protocol comparison alone
-could not see that, so a changed dataset used to resume silently against the
-old checkpoint.
+figures belong to the bytes that produced them.
 
 Both the native export and `best.pt` are written from the live Lightning
 network, without the staged checkpoint's `ema` entry: Ultralytics prefers an
@@ -464,14 +492,17 @@ python -m polyx.pipeline.sweep_best --output-dir "$POLYX_HPC_WORK/results/sweep-
 - `PolyxOptunaSweeper` injects the actual study trial number into each job as
   `sweep_trial_id`; identity never comes from parameters or Hydra's resettable
   job index. Before asking for new trials it scans the persisted records and
-  relaunches every trial left `RUNNING`: one with a progress snapshot continues
-  its checkpoint, one without a snapshot retries the same parameters in a clean
-  directory, and one whose execution finished but never reached Optuna is told
-  from its own metrics. A recovered trial keeps its study number; two leases
-  under `trials/.locks/` keep runners apart — a job holds `trial_NNN.lock`
-  while it trains and a runner holds `trial_NNN.recovery.lock` while it
-  relaunches one, so the recovery and the job it starts never block each
-  other. The lease carries its owner's host and pid, so a lease whose local
+  recovers every trial left `RUNNING` from its committed Lightning checkpoint: a
+  trial that has one resumes from it and never retrains a committed epoch, a
+  trial without one retries the same parameters in a clean directory, and one
+  whose execution finished but never reached Optuna is told from its own
+  published metrics. A recovered trial keeps its study number. The trial lease
+  is taken before the directory is prepared, so a duplicate job stops at the
+  lease instead of deleting the work of the process that owns the trial; two
+  leases under `trials/.locks/` keep runners apart — a job holds
+  `trial_NNN.lock` while it trains and a runner holds `trial_NNN.recovery.lock`
+  while it relaunches one, so the recovery and the job it starts never block
+  each other. The lease carries its owner's host and pid, so a lease whose local
   owner is gone is taken over at once; an owner that cannot be probed (another
   node) is taken over once it has shown no activity — no `progress.json` write
   — for `POLYX_LEASE_TTL` (an hour by default), so a killed job cannot block

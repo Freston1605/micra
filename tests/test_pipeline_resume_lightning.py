@@ -259,29 +259,40 @@ def test_recovered_publication_keeps_the_fit_metadata(
     assert (output / "completion.json").is_file()
 
 
-def test_a_legacy_snapshot_without_a_lightning_checkpoint_is_refused(
+def test_a_progress_record_naming_no_checkpoint_does_not_block_recovery(
     tmp_path: Path,
     tiny_dataset: Path,
     yolo_double: type[_RealLoopYOLO],
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A snapshot that predates Lightning checkpoints must not restart silently."""
-    output = tmp_path / "executions" / "legacy-snapshot"
+    """The heartbeat's resume fields are descriptive; the checkpoint decides."""
+    output = tmp_path / "executions" / "stale-heartbeat"
     yolo_double.prediction_sets = [_boxes_prediction(), _boxes_prediction()]
     yolo_double.fail_on_validation = 2
     assert _fit_detection(output, tiny_dataset) == 1
 
     progress = _read(output / "progress.json")
+    checkpoint = progress["resume_checkpoint"]
+    assert Path(checkpoint).is_file()
     progress["resume_checkpoint"] = None
+    progress["best_lightning_checkpoint"] = str(tmp_path / "gone.ckpt")
+    progress["stopped_early"] = True
+    progress["epochs_completed"] = 99
     (output / "progress.json").write_text(json.dumps(progress), encoding="utf-8")
 
-    yolo_double.prediction_sets = [_boxes_prediction()]
+    # The committed checkpoint still says epoch 0 with no stop, so epoch 1 runs.
+    yolo_double.prediction_sets = [_boxes_prediction(), _boxes_prediction()]
     yolo_double.fail_on_validation = None
-    code = _fit_detection(output, tiny_dataset, resume=True)
+    yolo_double.instances = []
+    validations_before_resume = yolo_double.validation_calls
+    assert _fit_detection(output, tiny_dataset, resume=True) == 0
 
-    assert code == 1
-    assert "no Lightning checkpoint" in capsys.readouterr().err
-    assert not (output / "training_state.json").exists()
+    assert yolo_double.validation_calls - validations_before_resume == 2
+    state = _read(output / "training_state.json")
+    assert state["epochs_completed"] == 2
+    assert state["resumed"] is True
+    assert state["resumed_from_epoch"] == 1
+    assert state["resumed_from"] == checkpoint
+    assert (output / "completion.json").is_file()
 
 
 # ── Mask R-CNN under the same real loop ───────────────────────────────────

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-20 19:00-0300\n"
+"POT-Creation-Date: 2026-11-24 16:17-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -2933,6 +2933,7 @@ msgid "Table"
 msgstr ""
 
 #: src/polyx/gui/report/exportables.py:548 src/polyx/gui/report/exportables.py:674
+#: src/polyx/pipeline/heldout.py:485 src/polyx/pipeline/heldout.py:496
 msgid "Figure"
 msgstr ""
 
@@ -2973,7 +2974,8 @@ msgstr ""
 msgid "Recall"
 msgstr ""
 
-#: src/polyx/gui/report/figures.py:105
+#: src/polyx/gui/report/figures.py:105 src/polyx/pipeline/heldout.py:485
+#: src/polyx/pipeline/heldout.py:496
 msgid "Value"
 msgstr ""
 
@@ -5732,7 +5734,7 @@ msgstr ""
 msgid "Filter by class:"
 msgstr ""
 
-#: src/polyx/gui/viewer/window.py:546
+#: src/polyx/gui/viewer/window.py:546 src/polyx/pipeline/heldout.py:496
 msgid "Class"
 msgstr ""
 
@@ -6078,39 +6080,32 @@ msgstr ""
 msgid "pinned weights are missing or unverified; stage them with --url on a networked node"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:161
+#: src/polyx/pipeline/artifacts.py:166
 msgid "Training execution report"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:163
+#: src/polyx/pipeline/artifacts.py:168
 msgid "Family"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:164
+#: src/polyx/pipeline/artifacts.py:169
 msgid "Backend"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:165
+#: src/polyx/pipeline/artifacts.py:170
 msgid "Selection metric"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:167
+#: src/polyx/pipeline/artifacts.py:172 src/polyx/pipeline/heldout.py:483
 msgid "Figures"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:179
+#: src/polyx/pipeline/artifacts.py:184
 msgid "Early stopping"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:173
+#: src/polyx/pipeline/artifacts.py:178 src/polyx/pipeline/heldout.py:494
 msgid "Per class"
-msgstr ""
-
-#: src/polyx/pipeline/campaign_app.py:84
-#, python-format
-msgid ""
-"%(path)s already holds an execution for a different protocol; use a new campaign root instead of"
-" resuming over it"
 msgstr ""
 
 #: src/polyx/pipeline/coco_import.py:371
@@ -6150,6 +6145,13 @@ msgstr ""
 
 #: src/polyx/pipeline/coco_import.py:378
 msgid "Audit"
+msgstr ""
+
+#: src/polyx/pipeline/config.py:52
+#, python-format
+msgid ""
+"protocol.split must be '%(split)s': model selection always reads the validation fold, because "
+"the held-out test cohort must never decide which checkpoint, family or trial is kept"
 msgstr ""
 
 #: src/polyx/pipeline/dataset.py:160
@@ -6242,37 +6244,314 @@ msgid ""
 " fold only"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:79
-#, python-format
-msgid "cannot verify the dataset of %(path)s: it has no file hashes"
-msgstr ""
-
-#: src/polyx/pipeline/execution.py:85
-#, python-format
-msgid ""
-"the dataset behind %(path)s changed since its checkpoint was written; start a new output "
-"directory instead of resuming over it"
-msgstr ""
-
-#: src/polyx/pipeline/execution.py:186
+#: src/polyx/pipeline/execution.py:155
 #, python-format
 msgid "dataset audit failed: %(codes)s"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:133
-msgid "protocol changed since the progress snapshot was written"
+#: src/polyx/pipeline/execution.py:161
+#, python-format
+msgid "cannot verify the dataset of %(path)s: it has no file hashes"
 msgstr ""
 
-#: src/polyx/pipeline/execution.py:148
+#: src/polyx/pipeline/execution.py:112
+#, python-format
+msgid "resume requested but no committed Lightning checkpoint exists at %(path)s"
+msgstr ""
+
+#: src/polyx/pipeline/execution.py:127
 #, python-format
 msgid ""
 "%(path)s already holds an execution; pass resume=true to continue it or choose a new output "
 "directory"
 msgstr ""
 
+#: src/polyx/pipeline/heldout.py:152
+#, python-format
+msgid "the selected checkpoint of %(path)s is missing: %(checkpoint)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:295
+#, python-format
+msgid ""
+"the test cohort of %(path)s declares the classes %(cohort)s, but the execution was trained on "
+"%(execution)s; the held-out cohort must name the execution's own classes"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:111
+#, python-format
+msgid ""
+"held-out evaluation needs a finished training execution: %(path)s has no readable completion "
+"record"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:126
+#, python-format
+msgid "the execution at %(path)s is incomplete: its completion record names no %(field)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:175
+#, python-format
+msgid ""
+"the execution at %(path)s records no %(kind)s dataset; the held-out cohort cannot be verified "
+"against the classes it was trained on"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:190 src/polyx/pipeline/heldout.py:224
+#, python-format
+msgid "no test split is declared in %(path)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:260
+#, python-format
+msgid "the test cohort declaration is missing: %(path)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:391
+#, python-format
+msgid "the confidence threshold must be within [0, 1], got %(value)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:460
+#, python-format
+msgid "- Source execution: %(path)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:461
+#, python-format
+msgid "- Family: %(name)s (%(framework)s)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:463
+#, python-format
+msgid "- Task: %(task)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:464
+#, python-format
+msgid "- Split scored: %(split)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:465
+#, python-format
+msgid "- Checkpoint: %(path)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:466
+#, python-format
+msgid "- Checkpoint SHA-256: %(sha256)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:467
+#, python-format
+msgid "- Selected epoch: %(epoch)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:468
+#, python-format
+msgid "- Test cohort: %(images)s images"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:469
+#, python-format
+msgid "- Test cohort source: %(source)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:470
+#, python-format
+msgid "- Test cohort fingerprint: %(fingerprint)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:471
+#, python-format
+msgid "- Execution dataset fingerprint: %(fingerprint)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:473
+#, python-format
+msgid "- Confidence threshold: %(threshold).2f (%(source)s)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:478
+#, python-format
+msgid "- Overlap rule: %(overlap)s >= %(iou).2f"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:480
+#, python-format
+msgid "- Device: %(device)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:481
+#, python-format
+msgid "- Evaluated at: %(moment)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:508
+msgid ""
+"The primary figure is the class-aware operating-point F1, the same definition the shared "
+"evaluator uses for model selection. It is reported here once, at the recorded threshold; this "
+"action does not tune or recommend a threshold."
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:541
+#, python-format
+msgid "write the held-out result outside %(path)s: the execution is read-only here"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:556
+#, python-format
+msgid ""
+"held-out evaluation covers the Ultralytics detection and segmentation families and the "
+"torchvision Mask R-CNN family; %(path)s was produced by %(family)s (%(framework)s)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:569
+#, python-format
+msgid "%(path)s already holds a held-out result; pass --force to replace it"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:626
+msgid "Score a frozen checkpoint on the held-out test cohort"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:632
+msgid "the finished training execution directory"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:638
+msgid "where to write heldout_test.json and heldout_test.md"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:644
+msgid "the test cohort: a YOLO data.yaml or a canonical COCO store; defaults to the execution's dataset"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:653
+msgid "one fixed confidence threshold (default: the execution's protocol confidence)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:658
+msgid "the inference device (default: the execution's backend device)"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:663
+msgid "replace an existing held-out result in --output"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:276
+#, python-format
+msgid "cannot read the classes of the execution's dataset %(path)s: %(reason)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:458
+msgid "Held-out test evaluation"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:485 src/polyx/pipeline/heldout.py:496
+msgid "Criterion"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:235
+#, python-format
+msgid "the test cohort of %(path)s is missing %(image)s"
+msgstr ""
+
+#: src/polyx/pipeline/heldout.py:676
+#, python-format
+msgid "NOT EVALUATED: %(reason)s"
+msgstr ""
+
+#: src/polyx/pipeline/identity.py:159
+#, python-format
+msgid ""
+"cannot resume %(path)s: %(field)s changed since its checkpoint was written; start a new output "
+"directory instead of resuming over it"
+msgstr ""
+
 #: src/polyx/pipeline/optuna_sweeper.py:160
 #, python-format
 msgid "recovery of interrupted trials failed (%(count)d); the study was not extended"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:296
+#, python-format
+msgid ""
+"the checkpoint %(checkpoint)s named by %(state)s is outside this execution's checkpoint "
+"directory %(directory)s"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:356
+#, python-format
+msgid ""
+"the committed checkpoint at %(path)s holds more than one %(callback)s state, so recovery cannot "
+"choose which one to use"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:431
+#, python-format
+msgid ""
+"the committed checkpoint at %(path)s records an early-stopping state %(value)s that this engine "
+"does not recognise"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:169
+#, python-format
+msgid "%(path)s is not a Lightning training checkpoint"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:180
+#, python-format
+msgid ""
+"cannot resume %(path)s: its committed checkpoint uses recovery layout %(version)s, and this "
+"engine reads up to %(supported)s"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:192
+#, python-format
+msgid ""
+"cannot resume %(path)s: the committed checkpoint at %(checkpoint)s carries no verifiable "
+"execution identity; it is left untouched, so start a new output directory instead of resuming"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:207
+#, python-format
+msgid "the committed state at %(path)s names no best checkpoint to publish"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:274
+#, python-format
+msgid "the committed state at %(state)s names %(checkpoint)s, which is not a Lightning checkpoint file"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:289
+#, python-format
+msgid "the best checkpoint named by the committed state is missing: %(checkpoint)s"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:331
+#, python-format
+msgid "the committed checkpoint at %(path)s holds no callback state"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:350
+#, python-format
+msgid "the committed checkpoint at %(path)s holds no %(callback)s state"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:396
+#, python-format
+msgid "the committed checkpoint at %(path)s records no early-stopping state"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:78
+#, python-format
+msgid "cannot read the Lightning checkpoint at %(path)s: %(reason)s"
+msgstr ""
+
+#: src/polyx/pipeline/resume.py:159
+#, python-format
+msgid "cannot read the committed Lightning checkpoint at %(path)s with restricted loading: %(reason)s"
 msgstr ""
 
 #: src/polyx/pipeline/seg_conversion.py:184
@@ -6291,7 +6570,7 @@ msgid ""
 "annotation tool."
 msgstr ""
 
-#: src/polyx/pipeline/sweep_app.py:62
+#: src/polyx/pipeline/sweep_app.py:66
 #, python-format
 msgid "study trial %(trial)d is already running in another process"
 msgstr ""
@@ -6326,5 +6605,12 @@ msgstr ""
 #: src/polyx/pipeline/sweep_best.py:86
 #, python-format
 msgid "the winner is study trial %(trial)d but its artifact is missing under %(root)s"
+msgstr ""
+
+#: src/polyx/pipeline/sweep_space.py:51
+#, python-format
+msgid ""
+"protocol.split is fixed to '%(split)s' and cannot be searched: the held-out test cohort must "
+"never decide which trial is kept"
 msgstr ""
 

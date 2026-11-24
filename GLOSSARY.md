@@ -24,6 +24,31 @@ a benchmark. The resolved protocol is written verbatim into each training
 execution's artifacts. _Avoid_: hyperparameters (too narrow — it also fixes
 the split and the evaluator).
 
+## Selection split
+
+The dataset fold a training execution, a campaign job or a study trial reads
+to decide what is kept: the checkpoint, the ranked family or the trial value.
+It is always `val`, and it is fixed rather than configurable: a composed
+protocol, a campaign job or a study override that names any other fold
+(`train`, `test`, …) is refused before the first fit or trial, with an error
+that names `val` and the reason. Selection must stay independent of the
+report, so the fold that chooses is never the fold that is published as the
+final result. The default is unchanged: a run that names no split selects on
+`val`. Contrast **held-out test split**.
+
+## Held-out test split
+
+The `test` fold of a dataset: images reserved for the final, one-time
+evaluation of the kept model. It is never read while training, validating,
+selecting a checkpoint, ranking a campaign family or optimizing a study
+trial, and it never contributes the selection score. Scoring it during
+selection would quietly turn it into a second validation fold and make the
+reported number optimistic. Held-out evaluation is a separate step from the
+training pipeline, not part of it. The cohort scored there must declare the
+execution's own classes, in the same order; a cohort that renames or reorders
+them is refused, and the result records whether the cohort was the
+execution's declared dataset or an external one, beside both fingerprints.
+
 ## Dataset fingerprint
 
 The one digest over the exact files a headless execution trains and scores on:
@@ -36,6 +61,37 @@ or a replaced photo changes it. A resume compares the digest and refuses a misma
 restoring weights that belong to other bytes. Only files in a resolved split
 count: a neighbouring folder of plates is not part of the dataset.
 
+## Execution identity
+
+The one record that says which training execution a Lightning checkpoint
+belongs to: the resolved family (name, framework, task and weights
+declaration), the **initialization-weight identity**, the protocol and the
+[dataset fingerprint](#dataset-fingerprint). It is written as
+`execution_identity.json` in the execution directory and embedded in every
+checkpoint the engine writes, so a resume compares the requested execution
+against the state it would restore. The initialization-weight identity is the
+verified SHA-256 digest when the run starts from pinned weights, and the
+declared name otherwise. A mismatch is refused by field; a checkpoint with no
+verifiable record is a legacy checkpoint and is not resumable.
+
+## Resume checkpoint
+
+The one Lightning checkpoint a resumed execution restores:
+`checkpoints/lightning/last.ckpt`, or the newest per-epoch file when no `last`
+exists. It is the authority for completed epochs, the kept checkpoint and its
+score, and early-stopping state. Its engine block carries the
+[execution identity](#execution-identity); the checkpoint is read only with
+restricted (`weights_only=True`) deserialization. Lightning records the best
+checkpoint as an absolute path, so the reference is verified before it is
+resolved by file name inside the execution's own `checkpoints/lightning/`
+directory: a moved execution keeps that same position in another checkout and
+its old directory no longer exists, so it still resumes, while a path anywhere
+else is refused even when a file of the same name exists locally. The progress
+record is never a resume checkpoint, and staged or imported weights initialise
+a new run rather than continuing one. _Avoid_: progress snapshot (it is a
+heartbeat, not the resume authority), best.pt (the native export, not a
+Lightning resume point).
+
 ## Campaign
 
 One benchmark over several model families under the identical protocol: a single
@@ -44,7 +100,10 @@ with one training execution per family under a common campaign root. The model
 family is the only variable; the protocol, datasets and evaluator are shared.
 A campaign is not a **study**: hyperparameter search belongs to Optuna trials,
 not to the campaign itself. The cluster campaign is one SLURM job that runs the
-families sequentially, never an array of jobs.
+families sequentially, never an array of jobs. A resubmission with
+`resume=true` verifies a finished family's **execution identity** and
+[dataset fingerprint](#dataset-fingerprint) before reusing its published
+metrics; only a family that still matches is skipped.
 
 ## Study
 
@@ -61,7 +120,10 @@ One suggested configuration inside a study, executed as one normal training
 run. A trial changes only declared protocol hyperparameters; split, seed,
 augmentation subset and evaluator stay fixed. Trials are independent processes,
 so the study does not prune across them — Lightning's early stopping stops an
-individual trial.
+individual trial. A trial killed by a time limit keeps its study number and is
+recovered from its committed Lightning checkpoint, exactly as a single
+execution is: the checkpoint, not the progress record, says which epoch
+continues and which score the study receives.
 
 ## Sweeper
 
