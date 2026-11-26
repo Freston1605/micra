@@ -162,6 +162,12 @@ extra is skipped in favour of the main checkout's interpreter, with a warning.
 If you want the worktree to own its environment, run `uv sync --extra gui`
 there first.
 
+That indirection means the selected interpreter may be older than the branch's
+pins. The gate warns — without failing — when `pyproject.toml` or `uv.lock`
+changed after the selected environment was synced, naming
+`uv sync --extra gui` as the remedy; `uv lock --check` only proves the two
+dependency files agree with each other.
+
 Tests run **serially by default**. CI always runs serially and remains the
 reproducibility reference. `--parallel` (bare: `-n auto`) or `--parallel=N`
 (`-n N`) is an explicit local convenience; the gate never enables it on its

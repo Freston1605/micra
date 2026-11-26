@@ -168,6 +168,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script — the `polyx-*` aliases included — remains.
 
 ### Fixed
+- **The local gate warns when the environment predates the pins (#81).**
+  `tools/check.py` selects an interpreter that may belong to another checkout,
+  so `uv lock --check` proved the two dependency files agree with each other
+  while the environment that actually runs the suite could be older than both.
+  The gate now compares `pyproject.toml` and `uv.lock` against the newest
+  `.dist-info` in the selected interpreter's `site-packages` and prints a
+  warning naming the file that changed and `uv sync --extra gui`, without
+  failing: a probe that cannot answer (a foreign interpreter, a read-only
+  tree) stays silent, and machines without `uv` keep the lock check's own
+  warning. Documented in `CONTRIBUTING.md`.
 - **The translation audit rejects a malformed placeholder name (#79).** The
   placeholder scanner only matched names that already satisfy
   `[A-Za-z_][A-Za-z0-9_]*`, so `%(nombre de modelo)s` contributed nothing to

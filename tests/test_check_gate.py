@@ -3,6 +3,10 @@
 The suite is the slow part of the gate, so an explicit ``--parallel`` opt-in
 can use every core. Serial stays the default because CI and ordering-sensitive
 tests need a reproducible reference; parallelism must never be implicit.
+
+The gate also reports dependency drift: an environment synced before
+``pyproject.toml`` or ``uv.lock`` changed may not be the stack the branch
+develops against, and ``uv lock --check`` cannot see that.
 """
 
 from __future__ import annotations
@@ -160,3 +164,106 @@ def test_static_rejects_pytest_arguments():
 
     assert result.returncode == 2
     assert "--static" in result.stderr
+
+
+def _fake_environment(
+    root: Path, *, environment_at: float, pyproject_at: float, lock_at: float
+) -> Path:
+    """A checkout plus the ``site-packages`` of an environment it was synced into."""
+    (root / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    site = root / ".venv" / "lib" / "python3.12" / "site-packages"
+    dist_info = site / "micra-2.0.0.dist-info"
+    dist_info.mkdir(parents=True)
+    for path, stamp in (
+        (root / "pyproject.toml", pyproject_at),
+        (root / "uv.lock", lock_at),
+        (dist_info, environment_at),
+        (site, environment_at),
+    ):
+        os.utime(path, (stamp, stamp))
+    return site
+
+
+def test_dependency_files_newer_than_the_environment_are_reported(tmp_path, monkeypatch):
+    gate = _gate_module()
+    site = _fake_environment(
+        tmp_path, environment_at=1_000.0, pyproject_at=2_000.0, lock_at=2_000.0
+    )
+    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+
+    warning = gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python"))
+
+    assert warning is not None
+    assert "pyproject.toml and uv.lock" in warning
+    assert "uv sync --extra gui" in warning
+    assert "/checkout/.venv" in warning
+
+
+def test_only_the_edited_dependency_file_is_named(tmp_path, monkeypatch):
+    gate = _gate_module()
+    site = _fake_environment(
+        tmp_path, environment_at=2_000.0, pyproject_at=1_000.0, lock_at=3_000.0
+    )
+    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+
+    warning = gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python"))
+
+    assert warning is not None
+    assert "uv.lock changed" in warning
+    assert "pyproject.toml" not in warning
+
+
+def test_a_synced_environment_reports_nothing(tmp_path, monkeypatch):
+    gate = _gate_module()
+    site = _fake_environment(
+        tmp_path, environment_at=3_000.0, pyproject_at=1_000.0, lock_at=1_000.0
+    )
+    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+
+    assert gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python")) is None
+
+
+def test_an_environment_without_distributions_is_not_a_finding(tmp_path, monkeypatch):
+    """No trace of an install is no opinion, not a stale environment."""
+    gate = _gate_module()
+    site = tmp_path / "site-packages"
+    site.mkdir()
+    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+
+    assert gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python")) is None
+
+
+def test_an_interpreter_that_cannot_report_its_site_packages_is_not_a_finding(
+    tmp_path, monkeypatch
+):
+    gate = _gate_module()
+    monkeypatch.setattr(gate, "_site_packages", lambda python: None)
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+
+    assert gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python")) is None
+
+
+def test_the_drift_warning_does_not_stop_the_gate(monkeypatch, capsys):
+    """It is a warning: every command still runs and the exit status is unchanged."""
+    gate = _gate_module()
+    monkeypatch.setattr(gate, "_python", lambda: Path("/checkout/.venv/bin/python"))
+    monkeypatch.setattr(
+        gate,
+        "_dependency_drift",
+        lambda root, python: "uv.lock changed: run `uv sync --extra gui`",
+    )
+    monkeypatch.setattr(gate, "_commands", lambda *args, **kwargs: [["check"]])
+    monkeypatch.setattr(gate.shutil, "which", lambda name: None)
+    ran: list[list[str]] = []
+
+    def record(command, env):
+        ran.append(command)
+        return 0
+
+    monkeypatch.setattr(gate, "_run", record)
+
+    assert gate.main([]) == 0
+    assert ran == [["check"]]
+    assert "uv sync --extra gui" in capsys.readouterr().err

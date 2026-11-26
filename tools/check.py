@@ -116,6 +116,69 @@ def _run(command: list[str], env: dict[str, str]) -> int:
     return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
 
 
+#: Files whose edit means the selected environment no longer describes the
+#: stack the tree develops against.
+DEPENDENCY_FILES = ("pyproject.toml", "uv.lock")
+
+
+def _site_packages(python: Path) -> Path | None:
+    """The chosen interpreter's ``site-packages``, or None when it cannot say.
+
+    The gate may have picked an interpreter from another checkout, so the path
+    is asked of that interpreter rather than derived from its directory.
+    """
+    probe = "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+    result = subprocess.run([str(python), "-c", probe], capture_output=True, text=True, check=False)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    site = Path(result.stdout.strip().splitlines()[0])
+    return site if site.is_dir() else None
+
+
+def _environment_stamp(site: Path) -> float | None:
+    """When the environment last changed, if it left a trace.
+
+    Installing, upgrading or removing a distribution rewrites its ``.dist-info``
+    directory and adds an entry to ``site-packages``, so the newest of those
+    timestamps is the environment's. Reading filesystem metadata only: this is
+    a warning about drift, never a reason to fail.
+    """
+    stamps = [entry.stat().st_mtime for entry in site.glob("*.dist-info")]
+    if not stamps:
+        return None
+    return max([site.stat().st_mtime, *stamps])
+
+
+def _dependency_drift(root: Path, python: Path) -> str | None:
+    """A warning naming the remediation when the environment predates the pins.
+
+    ``uv lock --check`` proves the lockfile agrees with ``pyproject.toml``; it
+    cannot see whether the selected interpreter was synced after either file
+    changed, which is how a branch that moves a dependency passes the gate
+    against the environment it was about to invalidate.
+    """
+    site = _site_packages(python)
+    if site is None:
+        return None
+    stamp = _environment_stamp(site)
+    if stamp is None:
+        return None
+    newer = [
+        name
+        for name in DEPENDENCY_FILES
+        if (root / name).is_file() and (root / name).stat().st_mtime > stamp
+    ]
+    if not newer:
+        return None
+    files = " and ".join(newer)
+    environment = python.parent.parent
+    return (
+        f"{files} changed after {environment} was synced, so the gate may be "
+        "checking a stack those files no longer describe. "
+        "Run `uv sync --extra gui` to refresh it."
+    )
+
+
 def _split_parallel(argv: list[str]) -> tuple[list[str], list[str]]:
     """Separate the opt-in ``--parallel`` flag from the args pytest receives."""
     forwarded: list[str] = []
@@ -170,6 +233,10 @@ def main(argv: list[str]) -> int:
         print("--static runs the non-pytest checks; drop the pytest arguments.", file=sys.stderr)
         return 2
     python = _python()
+    drift = _dependency_drift(ROOT, python)
+    if drift is not None:
+        # A warning on purpose: the developer decides, the gate keeps going.
+        print(drift, file=sys.stderr)
     env = os.environ.copy()
     source = str(ROOT / "src")
     inherited = env.get("PYTHONPATH")
