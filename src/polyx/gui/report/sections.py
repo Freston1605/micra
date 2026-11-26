@@ -446,11 +446,10 @@ def _section_models(run, results_2, all_results, any_gt: bool) -> str:
     """
     # TWO F1 values are reported, and the difference between them is not a detail:
     #
-    #         localization  tp/(tp+fp) and tp/(tp+fn). Boxes that are well placed but with
-    #                                                                 the wrong class fall outside both denominators,
-    #                                                                 so it measures only whether the detector finds the particle.
-    #         with class    those same boxes count as a false positive of the predicted
-    #                                                                 class and a false negative of the real one, which is the strict criterion.
+    #         localisation  counts a well-placed box of the wrong polymer as found, so it
+    #                       measures only whether the detector finds the particle.
+    #         with class    counts that same box as a false positive of the predicted
+    #                       class and a false negative of the real one: the strict criterion.
     #
     # Publishing only the first overestimates performance, and also contradicts the
     # per-class table, which does penalize confusion. Both are declared.

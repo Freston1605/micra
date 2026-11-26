@@ -117,18 +117,18 @@ def test_coco_ap_caps_per_image_not_across_the_batch() -> None:
 
 
 def test_wrong_polymer_is_not_a_true_positive() -> None:
-    """The with-class criterion reuses the core misclassification rule.
+    """The two criteria answer two questions about one well-placed box (#224).
 
-    A well-placed box of the wrong polymer is a misclassification; under the
-    core definition it stays out of both the with-class and the localisation
-    numerators, so neither criterion can claim it as a true positive.
+    The box is on the particle and names the wrong polymer: localisation asks
+    whether the particle was found, so it credits it; the with-class selection
+    figure, which is the one that ranks checkpoints, cannot.
     """
     ground_truth = _ground_truth(1)
     ground_truth["categories"].append({"id": 1, "name": "PP"})
     evaluator = SharedEvaluator(ground_truth, split="val")
     result = evaluator.evaluate([_prediction([0, 10, 20, 20], 0.9, category=1)])
     assert result["selection"]["value"] == 0.0
-    assert result["figures"]["localisation_score"]["value"] == 0.0
+    assert result["figures"]["localisation_score"]["value"] == pytest.approx(1.0)
 
 
 def test_the_detection_cap_is_applied_per_image_and_category() -> None:

@@ -33,6 +33,7 @@ from polyx.core.detection_run.operating_point import (  # noqa: E402
     recommend,
     score,
 )
+from polyx.core.quality.metrics import match_image  # noqa: E402
 from tests.match_fixtures import misclassified_result  # noqa: E402
 
 
@@ -81,15 +82,54 @@ def _confidence_fixture(tmp_path: Path) -> ImageResult:
 # ── The two criteria ─────────────────────────────────────────────────────
 
 
-def test_localisation_ignores_misclassification(tmp_path):
+def test_localisation_credits_a_misclassified_match(tmp_path):
+    """The box was on the particle: localisation found it (#224)."""
     result = misclassified_result(tmp_path / "plate.png")
 
     measured = score([result], Criterion.LOCALISATION, 0.25)
 
-    assert (measured.tp, measured.fp, measured.fn, measured.miscls) == (1, 0, 0, 1)
+    # One correct pair and one well-placed wrong-class pair: both were found.
+    assert (measured.tp, measured.fp, measured.fn, measured.miscls) == (2, 0, 0, 1)
     assert measured.precision == pytest.approx(1.0)
     assert measured.recall == pytest.approx(1.0)
     assert measured.f1 == pytest.approx(1.0)
+
+
+def test_a_lone_misclassified_box_is_found_but_wrongly_labelled(tmp_path):
+    """#224's reproduction: perfect geometry, wrong polymer, F1 was 0.0.
+
+    Localisation measures whether the particle was found, so the pair is a
+    true positive there and the score is perfect. With class it is a false
+    positive of the predicted class and a false negative of the real one, and
+    only that criterion may report zero.
+    """
+    image = tmp_path / "plate.png"
+    prediction = _det(1, 0.9, (10, 10, 50, 50), name="PP")
+    truth = _det(0, 1.0, (10, 10, 50, 50))
+    match = match_image([prediction], [truth], iou_thr=0.5)
+    result = ImageResult(
+        image_path=image,
+        model_idx=0,
+        predictions=[prediction],
+        gt=[truth],
+        has_gt=True,
+        tp=match.tp,
+        fp=match.fp,
+        fn=match.fn,
+        miscls=match.miscls,
+        match=match,
+        match_iou_thr=0.5,
+        match_use_mask_iou=False,
+    )
+    assert (match.tp, match.fp, match.fn, match.miscls) == (0, 0, 0, 1)
+
+    localisation = Score.from_decision([result], Criterion.LOCALISATION, 0.25)
+    with_class = Score.from_decision([result], Criterion.WITH_CLASS, 0.25)
+
+    assert (localisation.tp, localisation.precision, localisation.recall) == (1, 1.0, 1.0)
+    assert localisation.f1 == pytest.approx(1.0)
+    assert (with_class.tp, with_class.fp, with_class.fn) == (0, 1, 1)
+    assert with_class.f1 == pytest.approx(0.0)
 
 
 def test_with_class_counts_it(tmp_path):
@@ -97,23 +137,23 @@ def test_with_class_counts_it(tmp_path):
 
     measured = score([result], Criterion.WITH_CLASS, 0.25)
 
-    assert (measured.tp, measured.fp, measured.fn, measured.miscls) == (1, 0, 0, 1)
-    # The misclassified box is a false positive of the predicted class and a
-    # false negative of the true one.
+    assert (measured.tp, measured.fp, measured.fn, measured.miscls) == (1, 1, 1, 1)
     assert measured.precision == pytest.approx(0.5)
     assert measured.recall == pytest.approx(0.5)
     assert measured.f1 == pytest.approx(0.5)
 
 
 def test_the_same_run_counters_give_both_criteria_without_rematching(tmp_path):
-    """A finished run carries its decision; the criterion only picks denominators."""
+    """A finished run carries its decision; the criterion only picks its place."""
     result = misclassified_result(tmp_path / "plate.png")
 
     localisation = Score.from_decision([result], Criterion.LOCALISATION, 0.25)
     with_class = Score.from_decision([result], Criterion.WITH_CLASS, 0.25)
 
-    assert (localisation.tp, localisation.fp, localisation.fn) == (1, 0, 0)
-    assert (with_class.tp, with_class.fp, with_class.fn) == (1, 0, 0)
+    # Same decision, two questions: the located-but-wrong-class pair is a
+    # true positive for one criterion and an error for the other.
+    assert (localisation.tp, localisation.fp, localisation.fn) == (2, 0, 0)
+    assert (with_class.tp, with_class.fp, with_class.fn) == (1, 1, 1)
     assert localisation.f1 == pytest.approx(1.0)
     assert with_class.f1 == pytest.approx(0.5)
     # Both describe the same decision: no second matching pass invented it.

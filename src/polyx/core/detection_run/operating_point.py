@@ -3,13 +3,16 @@
 A detection run can be scored in two ways, and they are not the same number:
 
 - **Localisation** asks only whether the particle was found. A box on the
-  particle with the wrong polymer is reported apart (``miscls``) and stays out
-  of both denominators.
+  particle with the wrong polymer is a true positive there — the geometry
+  decided the pairing — and is also reported apart as ``miscls``.
 - **With class** asks for the polymer too: that same box is a false positive of
   the predicted class and a false negative of the true one.
 
 The report has always named both. This module owns them so the page, the
 comparison table and the report cannot compute a third definition by hand.
+Only the class-aware question can penalise a confusion; the whole point of the
+localisation figure is that finding the particle is the work, so a match it
+located cannot score zero.
 
 There are also two *situations*, and they must not be confused:
 
@@ -73,7 +76,17 @@ def prf1(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
 
 @dataclass(frozen=True)
 class Score:
-    """Precision, recall and F1 at one threshold, under one named criterion."""
+    """Precision, recall and F1 at one threshold, under one named criterion.
+
+    ``tp``, ``fp`` and ``fn`` are the counters *as the criterion counts them*,
+    so ``precision`` and ``recall`` are always reproducible from the fields:
+    a well-placed box with the wrong polymer is credited as found under
+    localisation and counted as a false positive of the predicted class and a
+    false negative of the true one under with class. ``miscls`` keeps the
+    number of such pairs apart, because the report reconciles its two F1
+    figures with that count — it is already inside the counters above, never
+    an extra error on top of them.
+    """
 
     criterion: Criterion
     threshold: float
@@ -99,20 +112,26 @@ class Score:
         """Score counters that were already decided, under ``criterion``.
 
         ``tp/fp/fn`` are the plain match counters and ``miscls`` the
-        well-placed-but-wrong-class boxes; only the denominators change with
-        the criterion. Every caller that has counts goes through here, so the
-        two criteria are defined once.
+        well-placed-but-wrong-class boxes. The two criteria differ in where a
+        misclassification goes, and nowhere else: localisation credits it as a
+        true positive (the box was on the particle), so it enters neither
+        denominator; with class counts it as a false positive of the predicted
+        class and a false negative of the real one, so it enters both. Every
+        caller that has counts goes through here, so the two criteria are
+        defined once.
         """
         if criterion is Criterion.WITH_CLASS:
             precision, recall, f1 = prf1(tp, fp + miscls, fn + miscls)
+            counted = (tp, fp + miscls, fn + miscls)
         else:
-            precision, recall, f1 = prf1(tp, fp, fn)
+            precision, recall, f1 = prf1(tp + miscls, fp, fn)
+            counted = (tp + miscls, fp, fn)
         return cls(
             criterion=criterion,
             threshold=threshold,
-            tp=tp,
-            fp=fp,
-            fn=fn,
+            tp=counted[0],
+            fp=counted[1],
+            fn=counted[2],
             miscls=miscls,
             precision=precision,
             recall=recall,
@@ -130,8 +149,8 @@ class Score:
 
         ``ImageResult.tp/fp/fn/miscls`` are the serialised projection of the
         match the run performed; nothing is matched again here. The criterion
-        only decides which counters enter the denominators, so a caller cannot
-        silently change the decision, only the question asked of it.
+        only decides where the counters enter, so a caller cannot silently
+        change the decision, only the question asked of it.
 
         The ``threshold`` is the one the run used (``RunParams.conf``). It is
         recorded, not applied: the predictions were already filtered when the

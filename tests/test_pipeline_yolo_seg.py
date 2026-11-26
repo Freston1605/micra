@@ -712,9 +712,10 @@ def test_mask_iou_is_class_aware_like_its_criterion_says(
     assert code == 0
     metrics = _read(output / "metrics.json")
     assert metrics["selection"]["value"] == pytest.approx(0.0)
-    # The core definition keeps a misclassified box out of both criteria's
-    # true-positive numerator; localisation cannot claim it either.
-    assert metrics["figures"]["localisation_score"]["value"] == pytest.approx(0.0)
+    # Every mask was placed perfectly, so localisation finds every particle even
+    # though none carries the right polymer (#224); only the class-aware
+    # figures may report zero.
+    assert metrics["figures"]["localisation_score"]["value"] == pytest.approx(1.0)
     assert metrics["figures"]["mask_iou"]["value"] == pytest.approx(0.0)
     assert "class-aware" in metrics["figures"]["mask_iou"]["criterion"]
     for name, class_figures in metrics["per_class"].items():
