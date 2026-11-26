@@ -168,6 +168,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script — the `polyx-*` aliases included — remains.
 
 ### Fixed
+- **The translation audit rejects a malformed placeholder name (#79).** The
+  placeholder scanner only matched names that already satisfy
+  `[A-Za-z_][A-Za-z0-9_]*`, so `%(nombre de modelo)s` contributed nothing to
+  either side of the comparison and a message id plus translation that shared
+  the typo passed the gate, while the pair raises `ValueError` the first time
+  it is formatted. `po.malformed_placeholders` now reports every `%(...)s`
+  token whose name is not an identifier, and the catalog check fails on it for
+  the message id, the plural message id and every translation form, naming the
+  file, the line and the token. A `%` that is not a substitution — `50%(w/w)`
+  — carries no conversion character and stays out of the report.
 - **Fix review of the benchmark-integrity work (#237–#243).** A campaign
   resubmitted with `resume=true` no longer treats an existing `completion.json`
   as proof enough: the finished family goes through the engine, which verifies

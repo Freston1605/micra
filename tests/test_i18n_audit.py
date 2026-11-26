@@ -398,6 +398,79 @@ def test_english_placeholder_names_pass(tmp_path):
     assert audit.audit_catalogs(tmp_path) == []
 
 
+def test_po_reader_recognises_a_malformed_placeholder_name():
+    """A name Python would reject is still a token the reader must report."""
+    assert po.malformed_placeholders("%(nombre de modelo)s listo") == ["%(nombre de modelo)s"]
+    assert po.malformed_placeholders("%(1st)s and %(a-b)s") == ["%(1st)s", "%(a-b)s"]
+    assert po.malformed_placeholders("%(name)6.1f") == []
+    assert po.malformed_placeholders("%(name)s %(name)s") == []
+
+
+def test_po_reader_leaves_a_percent_that_is_not_a_substitution():
+    """``50%(w/w)`` and ``100%%`` name nothing, so they are not placeholders."""
+    assert po.malformed_placeholders("50%(w/w) of the mass") == []
+    assert po.malformed_placeholders("100%% sure") == []
+    assert po.malformed_placeholders("50% (approx.)") == []
+
+
+def test_an_invalid_placeholder_name_fails_on_both_sides(tmp_path):
+    """The regression: a typo shared by message id and translation passed.
+
+    Both sides parse to no placeholder at all, so the sets compared equal and
+    the audit reported nothing, yet formatting the string raises ``ValueError``.
+    """
+    _write_tree(
+        tmp_path,
+        {
+            "src/polyx/app.py": (
+                'from polyx.core.i18n import _\n\nlabel = _("%(nombre de modelo)s is ready")\n'
+            ),
+            TEMPLATE_REL: _pot(_entry("%(nombre de modelo)s is ready", "")),
+            CATALOG_REL: _catalog(
+                _entry("%(nombre de modelo)s is ready", "%(nombre de modelo)s listo")
+            ),
+        },
+    )
+
+    findings = audit.audit_catalogs(tmp_path)
+
+    assert {finding.kind for finding in findings} == {"invalid-placeholder"}
+    labels = {finding.detail.split(" for ")[0] for finding in findings}
+    assert labels == {"message id", "translation"}
+    assert "%(nombre de modelo)s" in findings[0].detail
+    assert all(finding.path.endswith("messages.po") and finding.line for finding in findings)
+
+
+def test_an_invalid_placeholder_in_a_plural_message_id_fails_the_gate(tmp_path):
+    template = (
+        '#: src/polyx/app.py:3\nmsgid "%(n total)d image"\nmsgid_plural "%(n total)d images"\n'
+        'msgstr[0] ""\nmsgstr[1] ""\n\n'
+    )
+    catalog = (
+        '#: src/polyx/app.py:3\nmsgid "%(n total)d image"\nmsgid_plural "%(n total)d images"\n'
+        'msgstr[0] "%(n total)d imagen"\nmsgstr[1] "%(n total)d imágenes"\n\n'
+    )
+    _write_tree(
+        tmp_path,
+        {
+            "src/polyx/app.py": (
+                "from polyx.core.i18n import ngettext\n\n"
+                'label = ngettext("%(n total)d image", "%(n total)d images", 2)\n'
+            ),
+            TEMPLATE_REL: _pot(template),
+            CATALOG_REL: _catalog(catalog),
+        },
+    )
+
+    findings = audit.audit_catalogs(tmp_path)
+
+    assert findings
+    assert {finding.kind for finding in findings} == {"invalid-placeholder"}
+    assert {"message id", "plural message id"} <= {
+        finding.detail.split(" for ")[0] for finding in findings
+    }
+
+
 def test_a_plural_parenthetical_in_a_message_id_fails_the_gate(tmp_path):
     template = (
         '#: src/polyx/app.py:3\nmsgid "%(n)d image(s)"\nmsgid_plural "%(n)d image(s)"\n'

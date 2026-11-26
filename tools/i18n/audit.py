@@ -1,4 +1,4 @@
-"""The translation gate: eight ways a catalog drifts from the source tree.
+"""The translation gate: nine ways a catalog drifts from the source tree.
 
 Every check prints the file, the line and the offending string, because the
 person fixing it is usually an agent reading a log:
@@ -8,6 +8,7 @@ person fixing it is usually an agent reading a log:
 - a catalog entry is empty, fuzzy or missing, so the user would silently get
   the English source instead of a translation;
 - a placeholder set does not match between message id and translation;
+- a placeholder name is not a Python identifier, so no comparison can see it;
 - a placeholder carries a Spanish name, or a message id bakes its plural into
   the sentence as ``(s)``/``(es)`` instead of using ``ngettext``;
 - a translation call takes an f-string or ``str.format`` braces, which no
@@ -56,6 +57,7 @@ PSEUDO_TAG = "qps_ploc"
 STALE_TEMPLATE = "stale-template"
 EMPTY_TRANSLATION = "empty-translation"
 PLACEHOLDER_MISMATCH = "placeholder-mismatch"
+INVALID_PLACEHOLDER = "invalid-placeholder"
 PLACEHOLDER_NAME = "placeholder-name"
 PLURAL_PARENTHETICAL = "plural-parenthetical"
 DYNAMIC_CALL = "dynamic-call"
@@ -492,7 +494,14 @@ def _plural_findings(relative: str, entry: po.PoEntry) -> list[Finding]:
     findings.extend(_hygiene_findings(relative, entry, entry.msgid, "", "message id"))
     if entry.msgid_plural:
         findings.extend(
-            _hygiene_findings(relative, entry, entry.msgid_plural, "", "plural message id")
+            _hygiene_findings(
+                relative,
+                entry,
+                entry.msgid_plural,
+                "",
+                "plural message id",
+                message_label="plural message id",
+            )
         )
     for index in forms:
         value = entry.msgstr_plural[index]
@@ -512,7 +521,14 @@ def _plural_findings(relative: str, entry: po.PoEntry) -> list[Finding]:
             _placeholder_findings(relative, entry, expected_id or entry.msgid, value, label)
         )
         findings.extend(
-            _hygiene_findings(relative, entry, expected_id or entry.msgid, value, label)
+            _hygiene_findings(
+                relative,
+                entry,
+                expected_id or entry.msgid,
+                value,
+                label,
+                message_label=None,
+            )
         )
     return findings
 
@@ -523,6 +539,8 @@ def _hygiene_findings(
     message_id: str,
     translation: str,
     label: str,
+    *,
+    message_label: str | None = "message id",
 ) -> list[Finding]:
     """Message-id hygiene: English placeholder names and no baked-in plurals."""
     findings: list[Finding] = []
@@ -548,7 +566,35 @@ def _hygiene_findings(
                 f"name(s) {spanish}; name them in English",
             )
         )
+    if message_label is not None:
+        findings.extend(_invalid_placeholder_findings(relative, entry, message_id, message_label))
+    findings.extend(_invalid_placeholder_findings(relative, entry, translation, label))
     return findings
+
+
+def _invalid_placeholder_findings(
+    relative: str,
+    entry: po.PoEntry,
+    text: str,
+    label: str,
+) -> list[Finding]:
+    """A named placeholder whose name Python would reject is not a placeholder.
+
+    Neither the message id nor the translation contributes such a token to the
+    comparison, so a pair that shares one compares equal and both sides ship a
+    string that raises ``ValueError`` the first time it is formatted. The name
+    is the defect, so the check does not depend on the other side.
+    """
+    return [
+        Finding(
+            relative,
+            entry.lineno,
+            INVALID_PLACEHOLDER,
+            f"{label} for {_describe(entry.key)} has an invalid placeholder "
+            f"{token!r}; a placeholder name matches [A-Za-z_][A-Za-z0-9_]*",
+        )
+        for token in po.malformed_placeholders(text)
+    ]
 
 
 def _placeholder_findings(

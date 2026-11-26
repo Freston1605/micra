@@ -30,11 +30,31 @@ _ESCAPES = {
 
 _FIELD = re.compile(r"^(msgctxt|msgid_plural|msgid|msgstr)(?:\[(\d+)\])?\s+(.*)$")
 
+#: The conversion characters a message may use. ``%`` substitutions are
+#: ``s``, ``d``, ``i``, ``f`` and ``r`` here; anything else is not a token the
+#: audit reads, so the three expressions below share this one set.
+_CONVERSION = r"[sdifr]"
+
 #: Named ``%(name)s`` specifiers and the positional forms the audit rejects.
 #: The conversion specifier may carry flags, a width and a precision
 #: (``%(done)6.1f``, ``%(pct)3d``), and those are part of the same token.
-_NAMED_PLACEHOLDER = re.compile(r"%\(([A-Za-z_][A-Za-z0-9_]*)\)(?:[#0 +\-]*\d*(?:\.\d+)?)[sdifr]")
-_POSITIONAL_PLACEHOLDER = re.compile(r"(?<!%)%([sdifr])")
+_NAMED_PLACEHOLDER = re.compile(
+    r"%\(([A-Za-z_][A-Za-z0-9_]*)\)(?:[#0 +\-]*\d*(?:\.\d+)?)" + _CONVERSION
+)
+_POSITIONAL_PLACEHOLDER = re.compile(r"(?<!%)%(" + _CONVERSION + r")")
+
+#: A ``%(`` opening that no valid identifier follows. ``_NAMED_PLACEHOLDER``
+#: only sees well-formed names, so a name Python itself would reject —
+#: ``%(nombre de modelo)s``, ``%(1st)s``, ``%(a-b)s`` — matches nothing and
+#: contributes nothing to either side of the comparison: a message id and a
+#: translation that share the same malformed name would compare equal. This
+#: expression stops at the first ``)`` after the opening so the diagnostic can
+#: quote the whole token back. A ``%`` that is not a substitution — ``50%(w/w)``
+#: — carries no conversion character and is left alone.
+_MALFORMED_PLACEHOLDER = re.compile(
+    r"(?<!%)%\((?![A-Za-z_][A-Za-z0-9_]*\))([^()\n]{0,200})\)(?:[#0 +\-]*\d*(?:\.\d+)?)"
+    + _CONVERSION
+)
 
 
 @dataclass
@@ -196,6 +216,22 @@ def format_placeholders(text: str) -> set[str]:
     named = {match.group(1) for match in _NAMED_PLACEHOLDER.finditer(text)}
     positional = {f"%{match.group(1)}" for match in _POSITIONAL_PLACEHOLDER.finditer(text)}
     return named | positional
+
+
+def malformed_placeholders(text: str) -> list[str]:
+    """The ``%(name)s`` tokens whose name is not a valid identifier.
+
+    Each token is returned whole (``%(nombre de modelo)s``) in the order it
+    appears and without repeats, because the caller quotes it back to the
+    person editing the string. A message that names no placeholder returns an
+    empty list: this is a syntax check, not a comparison.
+    """
+    tokens: list[str] = []
+    for match in _MALFORMED_PLACEHOLDER.finditer(text):
+        token = match.group(0)
+        if token not in tokens:
+            tokens.append(token)
+    return tokens
 
 
 def has_braces(text: str) -> bool:
