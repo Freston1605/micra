@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from polyx.core.quality.dataset_audit import LEVEL_WARN, audit_dataset
 from tests.conftest import split_dataset
@@ -84,3 +85,40 @@ def test_audit_does_not_count_a_polygon_line_as_a_box(tmp_path: Path):
     assert "2" in malformed[0].title, malformed[0].title
     # The explanation names the dialect; it survives the locale.
     assert "YOLO-seg" in malformed[0].detail
+
+
+def test_audit_warns_a_list_split_is_not_trainable_headlessly(tmp_path: Path):
+    """The audit reads a .txt split, and says the headless path will refuse it."""
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=[f"{PET_BOX}\n"],
+        val_labels=[f"{PP_BOX}\n"],
+    )
+    root = yaml_path.parent
+    (root / "train.txt").write_text("images/train/train_0.jpg\n", encoding="utf-8")
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["train"] = "train.txt"
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "split_list_not_trainable" in codes
+    # The list still supplies the images: the warning is about the training seam.
+    assert audit.per_class["train"] == {"PET": 1}
+
+
+def test_audit_warns_when_nc_disagrees_with_the_declared_names(tmp_path: Path):
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=[f"{PET_BOX}\n"],
+        val_labels=[f"{PP_BOX}\n"],
+    )
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["nc"] = 3
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "nc_mismatch" in codes

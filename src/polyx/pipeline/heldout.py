@@ -35,6 +35,7 @@ from typing import Any
 
 import yaml
 
+from polyx.core.data import DatasetDeclaration, SplitKind
 from polyx.core.i18n import N_, _
 from polyx.core.provenance import sha256_file
 from polyx.pipeline.artifacts import write_json
@@ -43,16 +44,12 @@ from polyx.pipeline.coco import (
     coco_segmentation_predictions_from_results,
 )
 from polyx.pipeline.dataset import (
-    class_names,
     coco_store_ground_truth,
     dataset_fingerprint,
     ordered_categories,
     read_coco_store,
-    read_data_yaml,
     resolve_box_dataset,
     split_coco_images,
-    split_directory,
-    split_images,
 )
 from polyx.pipeline.errors import PipelineError, report_failure
 from polyx.pipeline.evaluation import (
@@ -184,9 +181,9 @@ def _declared_dataset(execution: Path, task: str) -> Path:
 
 def _box_cohort(dataset: Path) -> dict[str, Any]:
     """Resolve the box test fold and hash exactly the files it holds."""
-    declaration = read_data_yaml(dataset)
-    directory = split_directory(dataset, declaration, TEST_SPLIT)
-    if directory is None or not directory.is_dir() or not split_images(dataset, TEST_SPLIT):
+    declaration = DatasetDeclaration.load(dataset)
+    test = declaration.split(TEST_SPLIT)
+    if test is None or test.kind is not SplitKind.DIRECTORY or not test.exists or not test.images():
         raise HeldOutNotEvaluated(N_("no test split is declared in %(path)s"), path=str(dataset))
     resolved = resolve_box_dataset(dataset, TEST_SPLIT)
     images = resolved.splits[TEST_SPLIT]
@@ -211,8 +208,8 @@ def _box_cohort(dataset: Path) -> dict[str, Any]:
         "fingerprint": dataset_fingerprint(hashes),
         "paths": [image.path for image in images],
         "ground_truth": resolved.ground_truth(TEST_SPLIT),
-        "classes": [resolved.class_names[index] for index in sorted(resolved.class_names)],
-        "class_count": len(resolved.class_names),
+        "classes": [declaration.names[index] for index in sorted(declaration.names)],
+        "class_count": len(declaration.names),
     }
 
 
@@ -267,7 +264,7 @@ def _dataset_classes(dataset: Path, task: str) -> list[str]:
     """The class names a dataset declaration holds, in the family's dense order."""
     try:
         if task == "detect":
-            declared = class_names(read_data_yaml(dataset))
+            declared = DatasetDeclaration.load(dataset).names
             return [declared[index] for index in sorted(declared)]
         return [name for _category_id, name in ordered_categories(read_coco_store(dataset))]
     except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:

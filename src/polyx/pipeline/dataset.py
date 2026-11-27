@@ -20,11 +20,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from polyx.core.data import (
+    DatasetDeclaration,
+    SplitDeclaration,
+    SplitKind,
+    declares_real_domain,
+)
 from polyx.core.i18n import N_
 from polyx.core.labels import BBox, find_label_file, read_training_boxes
-from polyx.core.paths import IMAGE_EXTS, find_images
+from polyx.core.paths import IMAGE_EXTS
 from polyx.core.provenance import sha256_file
 from polyx.core.quality.dataset_audit import DatasetAudit, audit_resolved_boxes, coco_image_split
 from polyx.pipeline.errors import PipelineError
@@ -93,59 +97,24 @@ class ResolvedBoxDataset:
         }
 
 
-def read_data_yaml(data_yaml: Path) -> dict[str, Any]:
-    """Parse the dataset declaration using the project's YAML dependency."""
-    data = yaml.safe_load(Path(data_yaml).read_text(encoding="utf-8")) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"invalid data.yaml: {data_yaml}")
-    return data
+def _refuse_foreign_image_formats(split: SplitDeclaration) -> None:
+    """Refuse a photo format Ultralytics reads but the headless loader does not.
 
+    The declaration filters membership by the project's supported extensions, so
+    a ``.heic`` would otherwise disappear silently. This keeps the loud refusal
+    the directory walk performed before membership moved to the declaration.
+    """
+    from ultralytics.data.utils import IMG_FORMATS
 
-def class_names(data: dict[str, Any]) -> dict[int, str]:
-    """Class id to name, in the order declared by ``names``."""
-    raw = data.get("names") or {}
-    if isinstance(raw, list):
-        return {index: str(name) for index, name in enumerate(raw)}
-    return {int(index): str(name) for index, name in raw.items()}
-
-
-def split_directory(data_yaml: Path, data: dict[str, Any], split: str) -> Path | None:
-    """Resolve one split's image folder relative to the data.yaml location."""
-    value = data.get(split)
-    if not value:
-        return None
-    candidate = Path(str(value))
-    if candidate.is_absolute():
-        return candidate
-    root_value = data.get("path")
-    if root_value:
-        root = Path(str(root_value))
-        if not root.is_absolute():
-            root = (Path(data_yaml).parent / root).resolve()
-        resolved = (root / candidate).resolve()
-        if resolved.exists():
-            return resolved
-    return (Path(data_yaml).parent / candidate).resolve()
-
-
-def split_images(data_yaml: Path, split: str) -> list[Path]:
-    """Images of one split in stable order; ids are their positions here."""
-    data = read_data_yaml(data_yaml)
-    directory = split_directory(data_yaml, data, split)
-    if directory is None or not directory.exists():
-        return []
-    return find_images(directory)
-
-
-def _is_real_domain(declaration: Any) -> bool:
-    """Whether an explicit dataset declaration names real-domain imagery."""
-    if not isinstance(declaration, dict):
-        return False
-    for key in ("domain", "validation_domain", "image_domain"):
-        if str(declaration.get(key, "")).strip().lower() in {"real", "real_domain"}:
-            return True
-    info = declaration.get("info")
-    return _is_real_domain(info) if isinstance(info, dict) else False
+    for path in sorted(split.path.rglob("*")):
+        suffix = path.suffix.lower()
+        if not path.is_file() or suffix[1:] not in IMG_FORMATS or suffix in IMAGE_EXTS:
+            continue
+        raise PipelineError(
+            "dataset.unsupported_box_image_format",
+            N_("unsupported headless box image format: %(path)s"),
+            path=str(path),
+        )
 
 
 def _resolve_box_image(image: Path, native_label: Path, names: dict[int, str]) -> BoxImage:
@@ -199,11 +168,11 @@ def _resolve_box_image(image: Path, native_label: Path, names: dict[int, str]) -
 
 def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
     """Resolve, validate and fingerprint the actual inputs of a headless box execution."""
-    from ultralytics.data.utils import IMG_FORMATS, img2label_paths
+    from ultralytics.data.utils import img2label_paths
 
     data_yaml = data_yaml.resolve()
-    declaration = read_data_yaml(data_yaml)
-    names = dict(sorted(class_names(declaration).items()))
+    declaration = DatasetDeclaration.load(data_yaml)
+    names = dict(sorted(declaration.names.items()))
     if not names or list(names) != list(range(len(names))):
         raise PipelineError(
             "dataset.invalid_box_classes",
@@ -227,30 +196,21 @@ def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
         return f"{split}/{path.name}"
 
     for name in dict.fromkeys(("train", "val", "test", split)):
-        directory = split_directory(data_yaml, declaration, name)
+        declared = declaration.split(name)
+        directory = declared.path if declared is not None else None
         split_paths[name] = directory
         images = []
-        if directory is not None:
-            if directory.is_file() or (
-                not directory.is_dir() and directory.suffix.lower() == ".txt"
-            ):
+        if declared is not None:
+            if declared.kind in (SplitKind.LIST, SplitKind.FILE):
                 raise PipelineError(
                     "dataset.box_split_not_directory",
                     N_("box split %(split)s must name an image directory, not a file: %(path)s"),
                     split=name,
-                    path=str(directory),
+                    path=str(declared.path),
                 )
-            if directory.is_dir():
-                for path in sorted(directory.rglob("*")):
-                    suffix = path.suffix.lower()
-                    if not path.is_file() or suffix[1:] not in IMG_FORMATS:
-                        continue
-                    if suffix not in IMAGE_EXTS:
-                        raise PipelineError(
-                            "dataset.unsupported_box_image_format",
-                            N_("unsupported headless box image format: %(path)s"),
-                            path=str(path),
-                        )
+            if declared.kind is SplitKind.DIRECTORY and declared.exists:
+                _refuse_foreign_image_formats(declared)
+                for path in declared.images():
                     if path not in resolved:
                         native_label = Path(img2label_paths([str(path)])[0])
                         sample = _resolve_box_image(path, native_label, names)
@@ -283,7 +243,7 @@ def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
             )
         splits[name] = tuple(images)
     return ResolvedBoxDataset(
-        data_yaml, _is_real_domain(declaration), names, splits, split_paths, hashes
+        data_yaml, declaration.is_real_domain, names, splits, split_paths, hashes
     )
 
 
@@ -316,7 +276,7 @@ def validate_campaign_cohort(
             ),
             path=str(data_yaml),
         )
-    if not _is_real_domain(coco):
+    if not declares_real_domain(coco):
         raise PipelineError(
             "campaign.domain_not_real",
             N_("%(path)s must declare info.domain: real for a benchmark campaign"),
