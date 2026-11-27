@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 16:17-0300\n"
+"POT-Creation-Date: 2026-11-26 20:00-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -493,6 +493,31 @@ msgstr ""
 msgid "No trend in %(quantity)s with depth is detected"
 msgstr ""
 
+#: src/polyx/core/data/yolo.py:323 src/polyx/core/data/yolo.py:331 src/polyx/core/data/yolo.py:340
+#, python-format
+msgid "%(path)s must declare 'names' as a list or a mapping of class IDs to names"
+msgstr ""
+
+#: src/polyx/core/data/yolo.py:164
+#, python-format
+msgid "%(path)s must contain a YAML mapping"
+msgstr ""
+
+#: src/polyx/core/data/yolo.py:90
+#, python-format
+msgid "cannot read the split list %(path)s: %(error)s"
+msgstr ""
+
+#: src/polyx/core/data/yolo.py:140 src/polyx/gui/trainer/state.py:433
+#, python-format
+msgid "data.yaml not found: %(path)s"
+msgstr ""
+
+#: src/polyx/core/data/yolo.py:146 src/polyx/core/data/yolo.py:155
+#, python-format
+msgid "could not read data.yaml %(path)s: %(error)s"
+msgstr ""
+
 #: src/polyx/core/detect/tiling.py:236
 #, python-format
 msgid "%(width)d×%(height)d px → %(tiles)d tile of %(tile)d px, %(overlap)d%% overlap"
@@ -696,164 +721,188 @@ msgid ""
 "threshold %(threshold).2f"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:226
+#: src/polyx/core/quality/dataset_audit.py:178
 msgid "data.yaml not found"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:278
+#: src/polyx/core/quality/dataset_audit.py:204
+msgid "nc does not match the declared names"
+msgstr ""
+
+#: src/polyx/core/quality/dataset_audit.py:232
 #, python-format
 msgid "class %(id)s"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:340
+#: src/polyx/core/quality/dataset_audit.py:313
 msgid "No classes defined"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:341
+#: src/polyx/core/quality/dataset_audit.py:314
 msgid "The data.yaml has no 'names' key."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:347
+#: src/polyx/core/quality/dataset_audit.py:320
 msgid "Empty train"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:348
+#: src/polyx/core/quality/dataset_audit.py:321
 msgid "The train folder exists but contains no images."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:354
+#: src/polyx/core/quality/dataset_audit.py:327
 msgid "Empty val"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:355
+#: src/polyx/core/quality/dataset_audit.py:328
 msgid "The val folder exists but contains no images → metrics cannot be measured."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:361
+#: src/polyx/core/quality/dataset_audit.py:334
 msgid "No validation split in the COCO export"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:362
+#: src/polyx/core/quality/dataset_audit.py:335
 msgid ""
 "Every mask was imported into train because no image carries a split marker. Mark the validation "
 "images before training: class coverage and metrics cannot be audited without them."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:381
+#: src/polyx/core/quality/dataset_audit.py:354
 msgid ""
 "These classes have examples in train but ZERO in val. mAP will not measure their performance (it"
 " will give you a false sense of success). Add images of these classes to the validation split."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:394
+#: src/polyx/core/quality/dataset_audit.py:367
 msgid ""
 "The validation set contains a single class even though the model learns several. Multiclass "
 "metrics are not valid."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:528
+#: src/polyx/core/quality/dataset_audit.py:501
 msgid ""
 "Those lines were skipped. A YOLO-seg polygon line is valid YOLO but not a detection box, so the "
 "audit counts boxes only."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:589
+#: src/polyx/core/quality/dataset_audit.py:562
 msgid "These masks reference an image that is not declared in the export's images list."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:603
+#: src/polyx/core/quality/dataset_audit.py:576
 msgid "With so few images the metrics are unstable. Aim for ≥ 10-20."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:613
+#: src/polyx/core/quality/dataset_audit.py:586
 msgid "No dataset problems detected"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:614
+#: src/polyx/core/quality/dataset_audit.py:587
 msgid "Class distribution, validation and format all look correct."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:238
+#: src/polyx/core/quality/dataset_audit.py:190
 msgid "Could not read data.yaml"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:302
+#: src/polyx/core/quality/dataset_audit.py:205
+#, python-format
+msgid "The data.yaml declares nc: %(nc)s but lists %(count)s class names."
+msgstr ""
+
+#: src/polyx/core/quality/dataset_audit.py:260
+msgid ""
+"A .txt split list can be audited and previewed, but a headless box execution needs image "
+"directories."
+msgstr ""
+
+#: src/polyx/core/quality/dataset_audit.py:275
 #, python-format
 msgid "No %(split)s split declared"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:303
+#: src/polyx/core/quality/dataset_audit.py:276
 #, python-format
 msgid "The data.yaml has no '%(split)s' key. Ultralytics needs it to train and measure metrics."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:380
+#: src/polyx/core/quality/dataset_audit.py:353
 #, python-format
 msgid "Classes without validation: %(classes)s"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:392
+#: src/polyx/core/quality/dataset_audit.py:365
 #, python-format
 msgid "Single-class validation (%(class)s)"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:415
+#: src/polyx/core/quality/dataset_audit.py:388
 msgid "Strong class imbalance in train"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:489
+#: src/polyx/core/quality/dataset_audit.py:462
 msgid "Boxes with width/height ~0. Check the annotation."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:498
+#: src/polyx/core/quality/dataset_audit.py:471
 msgid "Badly normalised labels; YOLO will interpret them wrongly."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:507
+#: src/polyx/core/quality/dataset_audit.py:480
 msgid "The same box repeated within one file."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:516
+#: src/polyx/core/quality/dataset_audit.py:489
 msgid "They will be trained as background (no objects). Confirm this is intentional."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:527
+#: src/polyx/core/quality/dataset_audit.py:500
 #, python-format
 msgid "Label lines that are not detection boxes: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:552
+#: src/polyx/core/quality/dataset_audit.py:525
 msgid ""
 "A mask polygon needs at least three finite, in-bounds points and an even coordinate count. RLE "
 "segmentation is not a polygon; export polygons from the annotation tool."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:565
+#: src/polyx/core/quality/dataset_audit.py:538
 msgid ""
 "These polygons enclose zero area (collinear or repeated points) and cannot be used as "
 "segmentation ground truth."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:577
+#: src/polyx/core/quality/dataset_audit.py:550
 msgid "Every mask must reference a category declared in the export's categories list."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:588
+#: src/polyx/core/quality/dataset_audit.py:561
 #, python-format
 msgid "Annotations with an unknown image: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:602
+#: src/polyx/core/quality/dataset_audit.py:575
 #, python-format
 msgid "Very small validation set (%(count)d images)"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:314
+#: src/polyx/core/quality/dataset_audit.py:244
+msgid "Could not read a split list"
+msgstr ""
+
+#: src/polyx/core/quality/dataset_audit.py:259
+#, python-format
+msgid "%(split)s split is a text list"
+msgstr ""
+
+#: src/polyx/core/quality/dataset_audit.py:287
 #, python-format
 msgid "%(split)s path does not exist"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:315
+#: src/polyx/core/quality/dataset_audit.py:288
 #, python-format
 msgid ""
 "The data.yaml points to “%(path)s”, which does not exist on this computer. This usually happens "
@@ -861,67 +910,67 @@ msgid ""
 "relative paths)."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:416
+#: src/polyx/core/quality/dataset_audit.py:389
 #, python-format
 msgid ""
 "“%(top)s” has %(top_count)d boxes and “%(bottom)s” only %(bottom_count)d (%(ratio).0f× more). "
 "Consider balancing or using class weights."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:487
+#: src/polyx/core/quality/dataset_audit.py:460
 #, python-format
 msgid "Degenerate boxes in %(split)s: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:496
+#: src/polyx/core/quality/dataset_audit.py:469
 #, python-format
 msgid "Coordinates outside [0,1] in %(split)s: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:505
+#: src/polyx/core/quality/dataset_audit.py:478
 #, python-format
 msgid "Duplicate boxes in %(split)s: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:514
+#: src/polyx/core/quality/dataset_audit.py:487
 #, python-format
 msgid "Images with no label in %(split)s: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:550
+#: src/polyx/core/quality/dataset_audit.py:523
 #, python-format
 msgid "Invalid mask polygons in %(split)s: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:563
+#: src/polyx/core/quality/dataset_audit.py:536
 #, python-format
 msgid "Degenerate mask polygons in %(split)s: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:575
+#: src/polyx/core/quality/dataset_audit.py:548
 #, python-format
 msgid "Annotations with an unknown category in %(split)s: %(count)d"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:441
+#: src/polyx/core/quality/dataset_audit.py:414
 #, python-format
 msgid "“%(class)s”: little diversity"
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:442
+#: src/polyx/core/quality/dataset_audit.py:415
 #, python-format
 msgid ""
 "%(percent).0f%% of its boxes come from a single image (%(image)s). The model may overfit to that"
 " scene."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:472
+#: src/polyx/core/quality/dataset_audit.py:445
 msgid ""
 "Their boxes are the same size, so the model can only tell them apart by colour/texture. If they "
 "also look alike, expect confusion between the two."
 msgstr ""
 
-#: src/polyx/core/quality/dataset_audit.py:470
+#: src/polyx/core/quality/dataset_audit.py:443
 #, python-format
 msgid "“%(first)s” and “%(second)s” are almost identical in size"
 msgstr ""
@@ -1252,7 +1301,7 @@ msgid_plural "✓ Saved: %(path)s  (%(count)d boxes)"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/review_dialog.py:331 src/polyx/gui/trainer/pages/dataset.py:109
+#: src/polyx/gui/detector/review_dialog.py:331 src/polyx/gui/trainer/pages/dataset.py:65
 #: src/polyx/gui/trainer/window.py:28 src/polyx/pipeline/coco_import.py:353
 msgid "Dataset"
 msgstr ""
@@ -2933,7 +2982,7 @@ msgid "Table"
 msgstr ""
 
 #: src/polyx/gui/report/exportables.py:548 src/polyx/gui/report/exportables.py:674
-#: src/polyx/pipeline/heldout.py:485 src/polyx/pipeline/heldout.py:496
+#: src/polyx/pipeline/heldout.py:482 src/polyx/pipeline/heldout.py:493
 msgid "Figure"
 msgstr ""
 
@@ -2974,8 +3023,8 @@ msgstr ""
 msgid "Recall"
 msgstr ""
 
-#: src/polyx/gui/report/figures.py:105 src/polyx/pipeline/heldout.py:485
-#: src/polyx/pipeline/heldout.py:496
+#: src/polyx/gui/report/figures.py:105 src/polyx/pipeline/heldout.py:482
+#: src/polyx/pipeline/heldout.py:493
 msgid "Value"
 msgstr ""
 
@@ -4380,11 +4429,6 @@ msgstr ""
 msgid "Invalid cache: %(value)r (use “disk”, “ram”, “true” or “false”)."
 msgstr ""
 
-#: src/polyx/gui/trainer/state.py:433
-#, python-format
-msgid "data.yaml not found: %(path)s"
-msgstr ""
-
 #: src/polyx/gui/trainer/state.py:454
 msgid "Valid dataset: splits, labels and classes all correct."
 msgstr ""
@@ -4535,201 +4579,201 @@ msgstr ""
 msgid "Box loss"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:110
+#: src/polyx/gui/trainer/pages/dataset.py:66
 msgid ""
 "Load your data.yaml. We validate the structure, count images and show a preview with boxes. If "
 "your dataset is not divided, use Auto-split."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:104 src/polyx/gui/trainer/pages/dataset.py:419
+#: src/polyx/gui/trainer/pages/dataset.py:60 src/polyx/gui/trainer/pages/dataset.py:342
 msgid "(empty)"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:118
+#: src/polyx/gui/trainer/pages/dataset.py:74
 msgid "data.yaml"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:122
+#: src/polyx/gui/trainer/pages/dataset.py:78
 msgid "Path to data.yaml…"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:131 src/polyx/gui/trainer/pages/dataset.py:475
+#: src/polyx/gui/trainer/pages/dataset.py:87 src/polyx/gui/trainer/pages/dataset.py:398
 msgid "No data.yaml loaded."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:137
+#: src/polyx/gui/trainer/pages/dataset.py:93
 msgid "Counts per split"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:141
+#: src/polyx/gui/trainer/pages/dataset.py:97
 msgid "Train: —"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:143
+#: src/polyx/gui/trainer/pages/dataset.py:99
 msgid "Val: —"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:145
+#: src/polyx/gui/trainer/pages/dataset.py:101
 msgid "Test: —"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:147
+#: src/polyx/gui/trainer/pages/dataset.py:103
 msgid "Classes: —"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:155
+#: src/polyx/gui/trainer/pages/dataset.py:111
 msgid "Preview (6 random images with boxes)"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:164
+#: src/polyx/gui/trainer/pages/dataset.py:120
 msgid "6 more"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:171
+#: src/polyx/gui/trainer/pages/dataset.py:127
 msgid "Auto-split (if your dataset is not divided)"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:173
+#: src/polyx/gui/trainer/pages/dataset.py:129
 msgid ""
 "Takes a folder with images/ and labels/ and generates train/val/test automatically with a new "
 "data.yaml. It does not move files: it uses .txt lists."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:184
+#: src/polyx/gui/trainer/pages/dataset.py:140
 msgid "Root folder containing images/ and labels/…"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:210
+#: src/polyx/gui/trainer/pages/dataset.py:166
 msgid "Auto-split + generate data.yaml"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:223
+#: src/polyx/gui/trainer/pages/dataset.py:179
 msgid "Dataset validation"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:225
+#: src/polyx/gui/trainer/pages/dataset.py:181
 msgid "Checks that the dataset is sound before training. It runs automatically when data.yaml is loaded."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:236
+#: src/polyx/gui/trainer/pages/dataset.py:192
 msgid "data.yaml loaded and valid"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:237
+#: src/polyx/gui/trainer/pages/dataset.py:193
 msgid "Train split with images"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:238
+#: src/polyx/gui/trainer/pages/dataset.py:194
 msgid "Val split with images"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:239
+#: src/polyx/gui/trainer/pages/dataset.py:195
 msgid "Labels found (≥ 80 %)"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:240
+#: src/polyx/gui/trainer/pages/dataset.py:196
 msgid "Classes defined in YAML"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:241
+#: src/polyx/gui/trainer/pages/dataset.py:197
 msgid "Valid training parameters"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:256
+#: src/polyx/gui/trainer/pages/dataset.py:212
 msgid "Validate now"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:262
+#: src/polyx/gui/trainer/pages/dataset.py:218
 msgid "In-depth analysis"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:300 src/polyx/gui/trainer/pages/evaluate.py:153
+#: src/polyx/gui/trainer/pages/dataset.py:256 src/polyx/gui/trainer/pages/evaluate.py:153
 msgid "Select data.yaml"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:300 src/polyx/gui/trainer/pages/evaluate.py:153
+#: src/polyx/gui/trainer/pages/dataset.py:256 src/polyx/gui/trainer/pages/evaluate.py:153
 msgid "YAML (*.yaml *.yml)"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:307
+#: src/polyx/gui/trainer/pages/dataset.py:263
 msgid "Root folder with images/ and labels/"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:608 src/polyx/gui/trainer/pages/dataset.py:615
-#: src/polyx/gui/trainer/pages/dataset.py:625 src/polyx/gui/trainer/pages/dataset.py:631
-#: src/polyx/gui/trainer/pages/dataset.py:680
+#: src/polyx/gui/trainer/pages/dataset.py:527 src/polyx/gui/trainer/pages/dataset.py:534
+#: src/polyx/gui/trainer/pages/dataset.py:544 src/polyx/gui/trainer/pages/dataset.py:550
+#: src/polyx/gui/trainer/pages/dataset.py:595
 msgid "Auto-split"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:194
+#: src/polyx/gui/trainer/pages/dataset.py:150
 msgid "Train %:"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:199
+#: src/polyx/gui/trainer/pages/dataset.py:155
 msgid "Val %:"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:204
+#: src/polyx/gui/trainer/pages/dataset.py:160
 msgid "Test %:"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:317
+#: src/polyx/gui/trainer/pages/dataset.py:273
 msgid "✗ File not found."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:348
+#: src/polyx/gui/trainer/pages/dataset.py:299
 #, python-format
 msgid "Train: %(count)d"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:349
+#: src/polyx/gui/trainer/pages/dataset.py:300
 #, python-format
 msgid "Val: %(count)d"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:350
+#: src/polyx/gui/trainer/pages/dataset.py:301
 #, python-format
 msgid "Test: %(count)d"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:352
+#: src/polyx/gui/trainer/pages/dataset.py:303
 #, python-format
 msgid "Classes (%(count)d): %(names)s"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:495
+#: src/polyx/gui/trainer/pages/dataset.py:417
 msgid "No images in train."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:503
+#: src/polyx/gui/trainer/pages/dataset.py:425
 msgid "No images in val."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:527
+#: src/polyx/gui/trainer/pages/dataset.py:448
 msgid "Could not access the train split."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:538
+#: src/polyx/gui/trainer/pages/dataset.py:457
 msgid "The YAML has no 'names' key."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:562
+#: src/polyx/gui/trainer/pages/dataset.py:481
 msgid "Model, hyperparameters and augmentation within range."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:608
+#: src/polyx/gui/trainer/pages/dataset.py:527
 msgid "Select the root folder first."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:625
+#: src/polyx/gui/trainer/pages/dataset.py:544
 msgid "No images were found in images/."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:631
+#: src/polyx/gui/trainer/pages/dataset.py:550
 msgid "The percentages add up to more than 100."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:681
+#: src/polyx/gui/trainer/pages/dataset.py:596
 #, python-format
 msgid ""
 "Ready:\n"
@@ -4740,65 +4784,65 @@ msgid ""
 "Generated: %(path)s"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:387
+#: src/polyx/gui/trainer/pages/dataset.py:324
 msgid ""
 "(the train folder\n"
 "was not found)"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:410
+#: src/polyx/gui/trainer/pages/dataset.py:333
 msgid ""
 "(no images\n"
 "in train)"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:492
+#: src/polyx/gui/trainer/pages/dataset.py:414
 #, python-format
 msgid "%(count)s image in train."
 msgid_plural "%(count)s images in train."
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:500
+#: src/polyx/gui/trainer/pages/dataset.py:422
 #, python-format
 msgid "%(count)s image in val."
 msgid_plural "%(count)s images in val."
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:525
+#: src/polyx/gui/trainer/pages/dataset.py:446
 msgid "No images were found to review."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:536
+#: src/polyx/gui/trainer/pages/dataset.py:455
 #, python-format
 msgid "Classes: %(names)s"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:586
+#: src/polyx/gui/trainer/pages/dataset.py:505
 msgid "  ⚠️ no val"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:589
+#: src/polyx/gui/trainer/pages/dataset.py:508
 msgid "Distribution per class &nbsp; — &nbsp; "
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:616
+#: src/polyx/gui/trainer/pages/dataset.py:535
 #, python-format
 msgid "Does not exist: %(path)s. You need images/ and labels/ inside the folder."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:323
+#: src/polyx/gui/trainer/pages/dataset.py:280
 #, python-format
 msgid "✗ Error parsing YAML: %(error)s"
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:521
+#: src/polyx/gui/trainer/pages/dataset.py:442
 #, python-format
 msgid "%(pct).0f %% of images have a label (%(with_label)s/%(reviewed)s reviewed)."
 msgstr ""
 
-#: src/polyx/gui/trainer/pages/dataset.py:573
+#: src/polyx/gui/trainer/pages/dataset.py:492
 #, python-format
 msgid "Could not analyse: %(error)s"
 msgstr ""
@@ -5734,7 +5778,7 @@ msgstr ""
 msgid "Filter by class:"
 msgstr ""
 
-#: src/polyx/gui/viewer/window.py:546 src/polyx/pipeline/heldout.py:496
+#: src/polyx/gui/viewer/window.py:546 src/polyx/pipeline/heldout.py:493
 msgid "Class"
 msgstr ""
 
@@ -6096,7 +6140,7 @@ msgstr ""
 msgid "Selection metric"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:172 src/polyx/pipeline/heldout.py:483
+#: src/polyx/pipeline/artifacts.py:172 src/polyx/pipeline/heldout.py:480
 msgid "Figures"
 msgstr ""
 
@@ -6104,7 +6148,7 @@ msgstr ""
 msgid "Early stopping"
 msgstr ""
 
-#: src/polyx/pipeline/artifacts.py:178 src/polyx/pipeline/heldout.py:494
+#: src/polyx/pipeline/artifacts.py:178 src/polyx/pipeline/heldout.py:491
 msgid "Per class"
 msgstr ""
 
@@ -6154,90 +6198,90 @@ msgid ""
 "the held-out test cohort must never decide which checkpoint, family or trial is kept"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:160
+#: src/polyx/pipeline/dataset.py:115
+#, python-format
+msgid "unsupported headless box image format: %(path)s"
+msgstr ""
+
+#: src/polyx/pipeline/dataset.py:129
 #, python-format
 msgid ""
 "image %(image)s has a label at a location the two readers do not agree on; place its box labels "
 "at %(expected)s using the conventional layout"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:210
+#: src/polyx/pipeline/dataset.py:179
 #, python-format
 msgid "%(path)s must declare consecutive box class IDs starting at zero"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:313
+#: src/polyx/pipeline/dataset.py:273
 #, python-format
 msgid "%(path)s must declare domain: real (or validation_domain: real) for a benchmark campaign"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:322
+#: src/polyx/pipeline/dataset.py:282
 #, python-format
 msgid "%(path)s must declare info.domain: real for a benchmark campaign"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:357
+#: src/polyx/pipeline/dataset.py:317
 #, python-format
 msgid "the cohorts differ between %(boxes)s and %(masks)s: only-box=%(only_box)s only-mask=%(only_mask)s"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:394
+#: src/polyx/pipeline/dataset.py:354
 #, python-format
 msgid "the benchmark split %(split)s has no images in either dataset"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:172
+#: src/polyx/pipeline/dataset.py:141
 #, python-format
 msgid "%(path)s must contain readable five-column boxes with a known class and normalized coordinates"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:191
+#: src/polyx/pipeline/dataset.py:160
 #, python-format
 msgid "cannot use %(path)s as a training image: it must be readable and at least 10 pixels on each side"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:280
+#: src/polyx/pipeline/dataset.py:240
 #, python-format
 msgid "evaluation split %(split)s in %(path)s needs a directory with images"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:372
+#: src/polyx/pipeline/dataset.py:332
 #, python-format
 msgid ""
 "image %(name)s is in the %(box_fold)s fold of the box dataset and the %(mask_fold)s fold of the "
 "mask dataset"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:383
+#: src/polyx/pipeline/dataset.py:343
 #, python-format
 msgid "image %(name)s has different content in the box and mask datasets (%(box_hash)s != %(mask_hash)s)"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:239
+#: src/polyx/pipeline/dataset.py:207
 #, python-format
 msgid "box split %(split)s must name an image directory, not a file: %(path)s"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:333
+#: src/polyx/pipeline/dataset.py:293
 #, python-format
 msgid ""
 "the box dataset reuses the image name %(name)s across folds; basenames must be unique for a "
 "cohort comparison"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:345
+#: src/polyx/pipeline/dataset.py:305
 #, python-format
 msgid ""
 "the mask dataset reuses the image name %(name)s across folds; basenames must be unique for a "
 "cohort comparison"
 msgstr ""
 
-#: src/polyx/pipeline/dataset.py:251
-#, python-format
-msgid "unsupported headless box image format: %(path)s"
-msgstr ""
-
-#: src/polyx/pipeline/dataset.py:268
+#: src/polyx/pipeline/dataset.py:228
 #, python-format
 msgid ""
 "%(path)s is declared in both the %(first)s and the %(second)s splits; an image can belong to one"
@@ -6266,198 +6310,198 @@ msgid ""
 "directory"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:152
+#: src/polyx/pipeline/heldout.py:149
 #, python-format
 msgid "the selected checkpoint of %(path)s is missing: %(checkpoint)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:295
+#: src/polyx/pipeline/heldout.py:292
 #, python-format
 msgid ""
 "the test cohort of %(path)s declares the classes %(cohort)s, but the execution was trained on "
 "%(execution)s; the held-out cohort must name the execution's own classes"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:111
+#: src/polyx/pipeline/heldout.py:108
 #, python-format
 msgid ""
 "held-out evaluation needs a finished training execution: %(path)s has no readable completion "
 "record"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:126
+#: src/polyx/pipeline/heldout.py:123
 #, python-format
 msgid "the execution at %(path)s is incomplete: its completion record names no %(field)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:175
+#: src/polyx/pipeline/heldout.py:172
 #, python-format
 msgid ""
 "the execution at %(path)s records no %(kind)s dataset; the held-out cohort cannot be verified "
 "against the classes it was trained on"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:190 src/polyx/pipeline/heldout.py:224
+#: src/polyx/pipeline/heldout.py:187 src/polyx/pipeline/heldout.py:221
 #, python-format
 msgid "no test split is declared in %(path)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:260
+#: src/polyx/pipeline/heldout.py:257
 #, python-format
 msgid "the test cohort declaration is missing: %(path)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:391
+#: src/polyx/pipeline/heldout.py:388
 #, python-format
 msgid "the confidence threshold must be within [0, 1], got %(value)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:460
+#: src/polyx/pipeline/heldout.py:457
 #, python-format
 msgid "- Source execution: %(path)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:461
+#: src/polyx/pipeline/heldout.py:458
 #, python-format
 msgid "- Family: %(name)s (%(framework)s)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:463
+#: src/polyx/pipeline/heldout.py:460
 #, python-format
 msgid "- Task: %(task)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:464
+#: src/polyx/pipeline/heldout.py:461
 #, python-format
 msgid "- Split scored: %(split)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:465
+#: src/polyx/pipeline/heldout.py:462
 #, python-format
 msgid "- Checkpoint: %(path)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:466
+#: src/polyx/pipeline/heldout.py:463
 #, python-format
 msgid "- Checkpoint SHA-256: %(sha256)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:467
+#: src/polyx/pipeline/heldout.py:464
 #, python-format
 msgid "- Selected epoch: %(epoch)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:468
+#: src/polyx/pipeline/heldout.py:465
 #, python-format
 msgid "- Test cohort: %(images)s images"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:469
+#: src/polyx/pipeline/heldout.py:466
 #, python-format
 msgid "- Test cohort source: %(source)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:470
+#: src/polyx/pipeline/heldout.py:467
 #, python-format
 msgid "- Test cohort fingerprint: %(fingerprint)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:471
+#: src/polyx/pipeline/heldout.py:468
 #, python-format
 msgid "- Execution dataset fingerprint: %(fingerprint)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:473
+#: src/polyx/pipeline/heldout.py:470
 #, python-format
 msgid "- Confidence threshold: %(threshold).2f (%(source)s)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:478
+#: src/polyx/pipeline/heldout.py:475
 #, python-format
 msgid "- Overlap rule: %(overlap)s >= %(iou).2f"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:480
+#: src/polyx/pipeline/heldout.py:477
 #, python-format
 msgid "- Device: %(device)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:481
+#: src/polyx/pipeline/heldout.py:478
 #, python-format
 msgid "- Evaluated at: %(moment)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:508
+#: src/polyx/pipeline/heldout.py:505
 msgid ""
 "The primary figure is the class-aware operating-point F1, the same definition the shared "
 "evaluator uses for model selection. It is reported here once, at the recorded threshold; this "
 "action does not tune or recommend a threshold."
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:541
+#: src/polyx/pipeline/heldout.py:538
 #, python-format
 msgid "write the held-out result outside %(path)s: the execution is read-only here"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:556
+#: src/polyx/pipeline/heldout.py:553
 #, python-format
 msgid ""
 "held-out evaluation covers the Ultralytics detection and segmentation families and the "
 "torchvision Mask R-CNN family; %(path)s was produced by %(family)s (%(framework)s)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:569
+#: src/polyx/pipeline/heldout.py:566
 #, python-format
 msgid "%(path)s already holds a held-out result; pass --force to replace it"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:626
+#: src/polyx/pipeline/heldout.py:623
 msgid "Score a frozen checkpoint on the held-out test cohort"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:632
+#: src/polyx/pipeline/heldout.py:629
 msgid "the finished training execution directory"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:638
+#: src/polyx/pipeline/heldout.py:635
 msgid "where to write heldout_test.json and heldout_test.md"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:644
+#: src/polyx/pipeline/heldout.py:641
 msgid "the test cohort: a YOLO data.yaml or a canonical COCO store; defaults to the execution's dataset"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:653
+#: src/polyx/pipeline/heldout.py:650
 msgid "one fixed confidence threshold (default: the execution's protocol confidence)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:658
+#: src/polyx/pipeline/heldout.py:655
 msgid "the inference device (default: the execution's backend device)"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:663
+#: src/polyx/pipeline/heldout.py:660
 msgid "replace an existing held-out result in --output"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:276
+#: src/polyx/pipeline/heldout.py:273
 #, python-format
 msgid "cannot read the classes of the execution's dataset %(path)s: %(reason)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:458
+#: src/polyx/pipeline/heldout.py:455
 msgid "Held-out test evaluation"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:485 src/polyx/pipeline/heldout.py:496
+#: src/polyx/pipeline/heldout.py:482 src/polyx/pipeline/heldout.py:493
 msgid "Criterion"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:235
+#: src/polyx/pipeline/heldout.py:232
 #, python-format
 msgid "the test cohort of %(path)s is missing %(image)s"
 msgstr ""
 
-#: src/polyx/pipeline/heldout.py:676
+#: src/polyx/pipeline/heldout.py:673
 #, python-format
 msgid "NOT EVALUATED: %(reason)s"
 msgstr ""

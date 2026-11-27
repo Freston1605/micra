@@ -21,10 +21,8 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-import yaml
-
+from polyx.core.data import DatasetDeclaration, write_declaration
 from polyx.core.labels import find_label_file
-from polyx.core.paths import IMAGE_EXTS
 
 REAL_PREFIX = "real__"
 LAB_PREFIX = "lab__"
@@ -36,23 +34,8 @@ BEST_LAB_NAME = "best_sintetico.pt"
 
 def _val_images(data_yaml: Path) -> list[Path]:
     """Lists the images of the validation split declared in the yaml."""
-    cfg = yaml.safe_load(data_yaml.read_text(encoding="utf-8")) or {}
-    root = Path(cfg.get("path") or data_yaml.parent)
-    if not root.is_absolute():
-        root = (data_yaml.parent / root).resolve()
-
-    val = cfg.get("val")
-    if not val:
-        return []
-    path = Path(val)
-    if not path.is_absolute():
-        path = (root / path).resolve()
-
-    if path.is_file():  # list of .txt paths
-        return [Path(l.strip()) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]  # noqa: E741
-    if path.is_dir():
-        return sorted(p for p in path.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
-    return []
+    declared = DatasetDeclaration.load(data_yaml).split("val")
+    return list(declared.images()) if declared is not None else []
 
 
 def domains_present(data_yaml: Path) -> dict[str, int]:
@@ -118,17 +101,14 @@ def create_real_only_yaml(data_yaml: Path, destination_dir: Path) -> Path | None
         if label_path is not None:
             _link(label_path, lbl_dir / label_path.name)
 
-    cfg = yaml.safe_load(data_yaml.read_text(encoding="utf-8")) or {}
-    new = {
-        "path": str(destination_dir.resolve()),
-        # train is not used when validating, but Ultralytics expects the key.
-        # It points to the same subset so the large split is not dragged in.
-        "train": "images/val",
-        "val": "images/val",
-        "names": cfg.get("names", {}),
-    }
     output = destination_dir / "dataset_real_only.yaml"
-    output.write_text(yaml.safe_dump(new, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    declaration = DatasetDeclaration.create(
+        output,
+        root=destination_dir,
+        names=DatasetDeclaration.load(data_yaml).names,
+        splits={"train": img_dir, "val": img_dir},
+    )
+    write_declaration(declaration, output)
     return output
 
 
