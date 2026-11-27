@@ -284,6 +284,27 @@ def test_create_infers_a_missing_list_and_a_directory(tmp_path: Path):
     assert declaration.split("val").exists is False
 
 
+def test_write_preserves_sparse_class_ids(tmp_path: Path):
+    """A sparse name map is written as a mapping; a list would renumber it."""
+    dataset = tmp_path / "dataset"
+    dataset.mkdir(parents=True)
+    declaration = DatasetDeclaration.create(
+        dataset / "data.yaml",
+        root=dataset,
+        names={0: "PET", 2: "LDPE"},
+        splits={"train": dataset / "images" / "train", "val": dataset / "images" / "val"},
+    )
+
+    write_declaration(declaration, dataset / "data.yaml")
+    written = yaml.safe_load((dataset / "data.yaml").read_text(encoding="utf-8"))
+    reloaded = DatasetDeclaration.load(dataset / "data.yaml")
+
+    assert written["names"] == {0: "PET", 2: "LDPE"}
+    assert written["nc"] == 3
+    assert reloaded.names == {0: "PET", 2: "LDPE"}
+    assert reloaded.class_count == 3
+
+
 def test_missing_yaml_raises_data_yaml_missing(tmp_path: Path):
     with pytest.raises(CodedFailure) as raised:
         DatasetDeclaration.load(tmp_path / "absent" / "data.yaml")

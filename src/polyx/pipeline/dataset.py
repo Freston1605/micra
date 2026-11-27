@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from polyx.core.data import (
+    SPLIT_NAMES,
     DatasetDeclaration,
     SplitDeclaration,
     SplitKind,
@@ -172,7 +173,7 @@ def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
 
     data_yaml = data_yaml.resolve()
     declaration = DatasetDeclaration.load(data_yaml)
-    names = dict(sorted(declaration.names.items()))
+    names = declaration.names
     if not names or list(names) != list(range(len(names))):
         raise PipelineError(
             "dataset.invalid_box_classes",
@@ -195,7 +196,7 @@ def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
             return f"{split}/{path.relative_to(directory).as_posix()}"
         return f"{split}/{path.name}"
 
-    for name in dict.fromkeys(("train", "val", "test", split)):
+    for name in dict.fromkeys((*SPLIT_NAMES, split)):
         declared = declaration.split(name)
         directory = declared.path if declared is not None else None
         split_paths[name] = directory

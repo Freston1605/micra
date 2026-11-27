@@ -182,9 +182,7 @@ class DatasetDeclaration:
         """
         declaration_path = Path(path).resolve()
         resolved_root = Path(root).resolve()
-        parsed_names = _parse_names(
-            list(names) if not isinstance(names, Mapping) else names, declaration_path
-        )
+        parsed_names = _parse_names(names, declaration_path)
         declared_splits = {
             name: _split_declaration(
                 name, Path(value).resolve(), resolved_root, declaration_path.parent
@@ -195,7 +193,7 @@ class DatasetDeclaration:
             path=declaration_path,
             root=resolved_root,
             names=parsed_names,
-            declared_nc=len(parsed_names),
+            declared_nc=_class_count(parsed_names),
             is_real_domain=False,
             _splits=declared_splits,
         )
@@ -228,13 +226,24 @@ class DatasetDeclaration:
         """The named split, or ``None`` when the declaration does not name it."""
         return self._splits.get(name)
 
+    def class_names(self) -> list[str]:
+        """The names as a dense, id-ordered list."""
+        return [self.names[index] for index in sorted(self.names)]
+
+    @property
+    def class_count(self) -> int:
+        """The number of classes the ids span: ``max(id) + 1``, or zero."""
+        return max(self.names) + 1 if self.names else 0
+
 
 def write_declaration(declaration: DatasetDeclaration, path: str | Path) -> None:
-    """Write one canonical declaration: root, splits, names as a list and ``nc``.
+    """Write one canonical declaration: root, splits, names and ``nc``.
 
     A split inside the dataset root is written relative to it, so the file stays
-    portable; one that lives outside keeps its absolute path. What this writes,
-    :meth:`DatasetDeclaration.load` reads back to the same facts.
+    portable; one that lives outside keeps its absolute path. A dense name map
+    is written as a list, and a sparse one as a mapping so its class ids survive
+    the round trip. What this writes, :meth:`DatasetDeclaration.load` reads back
+    to the same facts.
     """
     payload: dict[str, Any] = {"path": str(declaration.root)}
     for name in SPLIT_NAMES:
@@ -242,8 +251,8 @@ def write_declaration(declaration: DatasetDeclaration, path: str | Path) -> None
         if split is None:
             continue
         payload[name] = _split_value(split, declaration.root)
-    payload["names"] = [declaration.names[index] for index in sorted(declaration.names)]
-    payload["nc"] = len(declaration.names)
+    payload["names"] = _names_payload(declaration.names)
+    payload["nc"] = declaration.class_count
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
@@ -305,6 +314,18 @@ def _split_value(split: SplitDeclaration, root: Path) -> str:
     if split.path.is_relative_to(root):
         return split.path.relative_to(root).as_posix()
     return str(split.path)
+
+
+def _names_payload(names: dict[int, str]) -> list[str] | dict[int, str]:
+    """A dense map becomes a list; a sparse one keeps its ids as a mapping."""
+    if sorted(names) == list(range(len(names))):
+        return [names[index] for index in sorted(names)]
+    return dict(sorted(names.items()))
+
+
+def _class_count(names: dict[int, str]) -> int:
+    """The number of classes the ids span, which is what ``nc`` means."""
+    return max(names) + 1 if names else 0
 
 
 def _parse_names(raw: Any, path: Path) -> dict[int, str]:

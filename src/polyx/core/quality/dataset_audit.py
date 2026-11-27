@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from polyx.core.data import DatasetDeclaration, SplitKind
+from polyx.core.data import SPLIT_NAMES, DatasetDeclaration, SplitKind
 from polyx.core.errors import CodedFailure
 from polyx.core.i18n import _
 from polyx.core.labels import BBox, find_label_file, read_boxes
@@ -27,6 +27,21 @@ from polyx.core.labels import BBox, find_label_file, read_boxes
 LEVEL_OK = "ok"
 LEVEL_WARN = "warn"
 LEVEL_ERROR = "error"
+
+#: The audit's artifact codes stay bare, one token per cause. A declaration
+#: failure keeps its code where the audit already had one; the rest are named
+#: here instead of leaking the seam's dotted prefix into saved findings.
+_FINDING_CODES = {
+    "data_yaml_missing": "data_yaml_missing",
+    "data_yaml_unreadable": "data_yaml_unreadable",
+    "dataset.declaration_not_mapping": "data_yaml_not_mapping",
+    "dataset.names_invalid": "classes_invalid",
+    "dataset.split_list_unreadable": "split_list_unreadable",
+}
+
+
+def _finding_code(code: str) -> str:
+    return _FINDING_CODES.get(code, code)
 
 
 @dataclass
@@ -189,23 +204,21 @@ class _Auditor:
                 LEVEL_ERROR,
                 _("Could not read data.yaml"),
                 exc.display(),
-                code=exc.code,
+                code=_finding_code(exc.code),
                 parameters=exc.parameters,
             )
             return audit
 
-        audit.class_names = [
-            self.declaration.names[index] for index in sorted(self.declaration.names)
-        ]
+        audit.class_names = self.declaration.class_names()
         declared_nc = self.declaration.declared_nc
-        if declared_nc is not None and declared_nc != len(audit.class_names):
+        if declared_nc is not None and declared_nc != self.declaration.class_count:
             audit.add(
                 LEVEL_WARN,
                 _("nc does not match the declared names"),
-                _("The data.yaml declares nc: %(nc)s but lists %(count)s class names.")
-                % {"nc": declared_nc, "count": len(audit.class_names)},
+                _("The data.yaml declares nc: %(nc)s but names %(count)s classes.")
+                % {"nc": declared_nc, "count": self.declaration.class_count},
                 code="nc_mismatch",
-                parameters={"nc": declared_nc, "count": len(audit.class_names)},
+                parameters={"nc": declared_nc, "count": self.declaration.class_count},
             )
         self._scan_all_splits()
         return self.run_checks()
@@ -234,7 +247,7 @@ class _Auditor:
 
     def _scan_all_splits(self) -> None:
         assert self.declaration is not None
-        for split in ("train", "val", "test"):
+        for split in SPLIT_NAMES:
             declared = self.declaration.split(split)
             try:
                 images = list(declared.images()) if declared is not None else []
@@ -243,7 +256,7 @@ class _Auditor:
                     LEVEL_ERROR,
                     _("Could not read a split list"),
                     exc.display(),
-                    code=exc.code,
+                    code=_finding_code(exc.code),
                     parameters=exc.parameters,
                 )
                 images = []

@@ -122,3 +122,32 @@ def test_audit_warns_when_nc_disagrees_with_the_declared_names(tmp_path: Path):
 
     codes = {finding.code for finding in audit.findings}
     assert "nc_mismatch" in codes
+
+
+def test_audit_accepts_nc_over_a_sparse_name_map(tmp_path: Path):
+    """nc counts the ids the mapping spans, so {0, 2} with nc: 3 is consistent."""
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=[f"{PET_BOX}\n"],
+        val_labels=[f"{PET_BOX}\n"],
+    )
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["names"] = {0: "PET", 2: "LDPE"}
+    data["nc"] = 3
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "nc_mismatch" not in codes
+
+
+def test_audit_reports_a_non_mapping_declaration_with_a_bare_code(tmp_path: Path):
+    path = tmp_path / "dataset" / "data.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text("- one\n- two\n", encoding="utf-8")
+
+    audit = audit_dataset(path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "data_yaml_not_mapping" in codes

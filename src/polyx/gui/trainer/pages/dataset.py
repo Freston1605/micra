@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
 )
 
-from polyx.core.data import DatasetDeclaration, write_declaration
+from polyx.core.data import DatasetDeclaration, SplitDeclaration, write_declaration
 from polyx.core.errors import CodedFailure
 from polyx.core.i18n import _, lazy, ngettext
 from polyx.core.labels import find_label_file, read_boxes
@@ -38,15 +38,19 @@ from ..state import validate_training_config
 from ._base import TrainerPage
 
 
+def _images_or_empty(declared: SplitDeclaration | None) -> list[Path]:
+    """The split's images, or none when it is absent or its list is unreadable."""
+    if declared is None:
+        return []
+    try:
+        return list(declared.images())
+    except CodedFailure:
+        return []
+
+
 def _split_count(declaration: DatasetDeclaration, name: str) -> int:
     """How many images a declared split holds; an unreadable list previews as 0."""
-    declared = declaration.split(name)
-    if declared is None:
-        return 0
-    try:
-        return len(declared.images())
-    except CodedFailure:
-        return 0
+    return len(_images_or_empty(declaration.split(name)))
 
 
 class _PreviewTile(QLabel):
@@ -285,7 +289,7 @@ class DatasetPage(TrainerPage):
         n_train = _split_count(declaration, "train")
         n_val = _split_count(declaration, "val")
         n_test = _split_count(declaration, "test")
-        names = [declaration.names[index] for index in sorted(declaration.names)]
+        names = declaration.class_names()
 
         self.state.dataset.yaml_path = p
         self.state.dataset.train_count = n_train
@@ -323,10 +327,7 @@ class DatasetPage(TrainerPage):
                 tile.setPixmap(QPixmap())
                 tile.setText(_("(the train folder\nwas not found)"))
             return
-        try:
-            imgs = list(declared.images())
-        except CodedFailure:
-            imgs = []
+        imgs = _images_or_empty(declared)[:200]
         if not imgs:
             for tile in self.tiles:
                 tile.setPixmap(QPixmap())
@@ -428,10 +429,7 @@ class DatasetPage(TrainerPage):
         # Check labels for the first 50 train images
         declared = declaration.split("train")
         if declared is not None and declared.exists:
-            try:
-                imgs = list(declared.images())[:50]
-            except CodedFailure:
-                imgs = []
+            imgs = _images_or_empty(declared)[:50]
             if imgs:
                 with_label = sum(1 for img in imgs if find_label_file(img))
                 pct = with_label / len(imgs) * 100
@@ -447,7 +445,7 @@ class DatasetPage(TrainerPage):
         else:
             self._set_check(3, None, _("Could not access the train split."))
 
-        names = [declaration.names[index] for index in sorted(declaration.names)]
+        names = declaration.class_names()
         has_names = bool(names)
         self._set_check(
             4,

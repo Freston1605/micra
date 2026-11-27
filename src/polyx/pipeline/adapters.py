@@ -25,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from polyx.core.data import DatasetDeclaration, SplitKind
+from polyx.core.i18n import _
 from polyx.core.labels import format_polygon_line
 from polyx.core.quality.dataset_audit import DatasetAudit, audit_coco_masks
 from polyx.pipeline.coco import (
@@ -200,13 +201,16 @@ def _ultralytics_dataset(data_yaml: Path, cfg: Any, *, mode: str) -> Any:
     split = "train" if mode == "train" else "val"
     declared = declaration.split(split)
     if declared is None or declared.kind is not SplitKind.DIRECTORY or not declared.exists:
-        raise ValueError(f"the dataset declaration has no usable '{split}' split: {data_yaml}")
+        raise ValueError(
+            _("the dataset declaration has no usable '%(split)s' split: %(path)s")
+            % {"split": split, "path": data_yaml}
+        )
     directory = declared.path
     val = declaration.split("val")
     val_directory = val.path if val is not None else None
     payload: dict[str, Any] = {
         "names": names,
-        "nc": len(names),
+        "nc": declaration.class_count,
         "channels": 3,
         "train": str(directory) if split == "train" else "",
         "val": str(val_directory) if val_directory is not None else "",

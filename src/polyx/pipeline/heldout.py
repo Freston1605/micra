@@ -36,6 +36,7 @@ from typing import Any
 import yaml
 
 from polyx.core.data import DatasetDeclaration, SplitKind
+from polyx.core.errors import CodedFailure
 from polyx.core.i18n import N_, _
 from polyx.core.provenance import sha256_file
 from polyx.pipeline.artifacts import write_json
@@ -183,8 +184,16 @@ def _box_cohort(dataset: Path) -> dict[str, Any]:
     """Resolve the box test fold and hash exactly the files it holds."""
     declaration = DatasetDeclaration.load(dataset)
     test = declaration.split(TEST_SPLIT)
-    if test is None or test.kind is not SplitKind.DIRECTORY or not test.exists or not test.images():
+    if test is None:
         raise HeldOutNotEvaluated(N_("no test split is declared in %(path)s"), path=str(dataset))
+    if test.kind is not SplitKind.DIRECTORY or not test.exists:
+        raise HeldOutNotEvaluated(
+            N_("the test split of %(path)s is not an image directory"), path=str(dataset)
+        )
+    if not test.images():
+        raise HeldOutNotEvaluated(
+            N_("the test split of %(path)s holds no images"), path=str(dataset)
+        )
     resolved = resolve_box_dataset(dataset, TEST_SPLIT)
     images = resolved.splits[TEST_SPLIT]
     root = dataset.parent
@@ -208,8 +217,8 @@ def _box_cohort(dataset: Path) -> dict[str, Any]:
         "fingerprint": dataset_fingerprint(hashes),
         "paths": [image.path for image in images],
         "ground_truth": resolved.ground_truth(TEST_SPLIT),
-        "classes": [declaration.names[index] for index in sorted(declaration.names)],
-        "class_count": len(declaration.names),
+        "classes": declaration.class_names(),
+        "class_count": declaration.class_count,
     }
 
 
@@ -264,15 +273,14 @@ def _dataset_classes(dataset: Path, task: str) -> list[str]:
     """The class names a dataset declaration holds, in the family's dense order."""
     try:
         if task == "detect":
-            declared = DatasetDeclaration.load(dataset).names
-            return [declared[index] for index in sorted(declared)]
+            return DatasetDeclaration.load(dataset).class_names()
         return [name for _category_id, name in ordered_categories(read_coco_store(dataset))]
     except (OSError, ValueError, KeyError, yaml.YAMLError) as exc:
         raise PipelineError(
             "heldout.classes_unreadable",
             N_("cannot read the classes of the execution's dataset %(path)s: %(reason)s"),
             path=str(dataset),
-            reason=str(exc),
+            reason=exc.display() if isinstance(exc, CodedFailure) else str(exc),
         ) from exc
 
 
