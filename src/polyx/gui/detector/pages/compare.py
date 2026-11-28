@@ -32,6 +32,7 @@ class ComparePage(DetectorPage):
         super().__init__(state, parent)
 
         c1, l1 = self.card(_("Per-model summary"), "resultados")
+        criterion = criterion_label(SCORE_CRITERION)
         self.tbl_summary = QTableWidget(0, 8)
         self.tbl_summary.setHorizontalHeaderLabels(
             [
@@ -39,10 +40,10 @@ class ComparePage(DetectorPage):
                 _("Images"),
                 _("Detections"),
                 _("Mean conf."),
-                str(LABEL_TP),
-                str(LABEL_FP),
-                str(LABEL_FN),
-                _("F1 (%(criterion)s)") % {"criterion": criterion_label(SCORE_CRITERION)},
+                f"{LABEL_TP} ({criterion})",
+                f"{LABEL_FP} ({criterion})",
+                f"{LABEL_FN} ({criterion})",
+                _("F1 (%(criterion)s)") % {"criterion": criterion},
             ]
         )
         self.tbl_summary.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)

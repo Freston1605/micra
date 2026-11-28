@@ -39,6 +39,9 @@ def test_compare_summary_names_its_criterion(qapp, tmp_path, selected_language):
     page.refresh()
 
     localisation = Score.from_decision([result], Criterion.LOCALISATION, run.params.conf)
+    assert page.tbl_summary.horizontalHeaderItem(4).text() == "True positives (localisation)"
+    assert page.tbl_summary.horizontalHeaderItem(5).text() == "False positives (localisation)"
+    assert page.tbl_summary.horizontalHeaderItem(6).text() == "False negatives (localisation)"
     assert page.tbl_summary.horizontalHeaderItem(7).text() == "F1 (localisation)"
     assert page.tbl_summary.item(0, 4).text() == str(localisation.tp)
     assert page.tbl_summary.item(0, 5).text() == str(localisation.fp)

@@ -31,9 +31,11 @@ from PySide6.QtWidgets import (
 from polyx.core.detect.protocol import size_image
 from polyx.core.detect.yolo import Detection
 from polyx.core.detection_run import display_name
+from polyx.core.detection_run.operating_point import Criterion, Score
 from polyx.core.i18n import _, ngettext
 from polyx.core.labels import STUDY_CLASSES, bbox_from, write_classes, write_lines
 from polyx.core.paths import DATASET_CORRECTIONS_DIR
+from polyx.core.quality.metrics import LABEL_FN, LABEL_FP, LABEL_MISCLS, LABEL_TP
 from polyx.gui import iconos
 from polyx.gui import theme as T
 
@@ -242,10 +244,12 @@ class ReviewDialog(QDialog):
     def _update_counts(self, res):
         parts = [_("Predictions: %(count)d") % {"count": len(res.predictions)}]
         if res.has_gt:
+            measured = Score.from_decision([res], Criterion.LOCALISATION, self.state.params.conf)
             parts.append(_("GT: %(count)d") % {"count": len(res.gt)})
-            parts.append(_("TP: %(count)d") % {"count": res.tp})
-            parts.append(_("FP: %(count)d") % {"count": res.fp})
-            parts.append(_("FN: %(count)d") % {"count": res.fn})
+            parts.append(f"{LABEL_TP} ({measured.label}): {measured.tp}")
+            parts.append(f"{LABEL_FP} ({measured.label}): {measured.fp}")
+            parts.append(f"{LABEL_FN} ({measured.label}): {measured.fn}")
+            parts.append(f"{LABEL_MISCLS}: {measured.miscls}")
         verdict = self.state.verdict_for(self._model_idx, res.image_path)
         v = {"buena": _("✓ Good"), "mala": _("✗ Bad")}.get(verdict, _("unreviewed"))
         parts.append(_("·  %(verdict)s") % {"verdict": v})
