@@ -52,7 +52,7 @@ class ReviewDialog(QDialog):
         self.setModal(False)
         self._current_idx = -1
         self._model_idx = -1
-        self._results: list = []  # ImageResult of the active model
+        self._results: list = []  # ImageResult of the selected dense model
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -179,11 +179,12 @@ class ReviewDialog(QDialog):
         self.combo_model.blockSignals(True)
         self.combo_model.clear()
         self._model_indices = []
-        for mi, rs in self.state.results.items():
+        for mi in sorted(self.state.results):
+            rs = self.state.results[mi]
             if not rs:
                 continue
-            slot = self.state.model_slots[mi]
-            self.combo_model.addItem(display_name(slot.alias, slot.alias_generated, mi))
+            model = self.state.model_at(mi)
+            self.combo_model.addItem(display_name(model.alias, model.alias_generated, mi))
             self._model_indices.append(mi)
         self.combo_model.blockSignals(False)
         if self._model_indices:

@@ -119,9 +119,9 @@ class ErrorsPage(DetectorPage):
         for mi, rs in state.results.items():
             if model_filter is not None and model_filter != -1 and mi != model_filter:
                 continue
-            slot = state.model_slots[mi]
-            label = display_name(slot.alias, slot.alias_generated, mi)
-            alias = slot.alias
+            model = state.model_at(mi)
+            label = display_name(model.alias, model.alias_generated, mi)
+            alias = model.alias
             for r in rs:
                 # The run's own decision: re-matching here would let the page
                 # apply a rule the run did not use (box IoU on a mask-matched

@@ -26,7 +26,7 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from polyx.core.detect.yolo import Detection  # noqa: E402
-from polyx.core.detection_run import ImageResult, RunResult  # noqa: E402
+from polyx.core.detection_run import ImageResult, ModelInfo, RunResult  # noqa: E402
 from polyx.core.detection_run.config import CalibrationPolicy  # noqa: E402
 from polyx.core.detection_run.operating_point import Criterion, Score  # noqa: E402
 from polyx.core.measure.calibration import (  # noqa: E402
@@ -356,6 +356,58 @@ def test_results_page_renders_the_display_name_not_the_alias(qapp, tmp_path, sel
     assert page.table.item(0, 0).data(Qt.UserRole) == "model_1"
     assert "Model 1 — conf" in page.lbl_sugg.text()
     assert "model_1" not in page.lbl_sugg.text()
+
+
+def test_results_page_and_export_use_the_run_alias(qapp, tmp_path, selected_language):
+    """The table and its CSV speak the run's alias, not the current slot's."""
+    from PySide6.QtCore import Qt
+
+    selected_language("en")
+    image = tmp_path / "photos" / "plate.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    run = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a")],
+        results={0: [misclassified_result(image)]},
+    )
+    state.run_result = run
+    state.results = run.results
+    state.params = run.params
+    page = _page_for(state)
+
+    assert page.table.item(0, 0).text() == "run_a"
+    assert page.table.item(0, 0).data(Qt.UserRole) == "run_a"
+    rows = page.export_rows()
+    assert {row[_column(rows, "model")] for row in rows[1:]} == {"run_a"}
+
+
+def test_review_in_viewer_finds_the_run_alias(qapp, tmp_path, monkeypatch):
+    """The row's stable alias is the run's, so the lookup finds its detections."""
+    import polyx.gui.viewer.window as viewer_window
+
+    image = tmp_path / "photos" / "plate.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    run = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a")],
+        results={0: [misclassified_result(image)]},
+    )
+    state.run_result = run
+    state.results = run.results
+    state.params = run.params
+    page = _page_for(state)
+    monkeypatch.setattr(viewer_window, "ViewerWindow", _FakeViewer)
+    _FakeViewer.instances.clear()
+
+    page.table.selectRow(0)
+    page._review_in_viewer()
+
+    assert len(_FakeViewer.instances) == 1
+    assert len(_FakeViewer.instances[0].state.detections) == 2
 
 
 def test_results_page_kpi_and_advice_use_named_criteria(qapp, tmp_path, selected_language):

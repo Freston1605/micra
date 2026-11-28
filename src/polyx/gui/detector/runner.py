@@ -3,8 +3,9 @@
 The runner owns the thread and the model loading; everything else -- decode,
 calibration, ground truth, prediction, measurement, matching, drawing and the
 run folder -- belongs to :func:`polyx.core.detection_run.run_detection`. The
-engine numbers its active models densely (``0..N-1``); this adapter maps those
-back onto the GUI's real ``model_slots`` indices before publishing results.
+engine numbers its active models densely (``0..N-1``) and the GUI keeps that
+same key for results, previews and review verdicts: there is no translation to
+real ``model_slots`` indices.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from .state import DetectorState
 
 class DetectorRunner(QThread):
     progress = Signal(int, int, str)
-    image_done = Signal(int, object)  # real model slot index, ImageResult
+    image_done = Signal(int, object)  # dense model index, ImageResult
     finished_ok = Signal()
     aborted = Signal()
     failed = Signal(str)
@@ -45,8 +46,6 @@ class DetectorRunner(QThread):
         # Where runs are created: the per-user data dir (ADR-0001), unless
         # the caller injects a root (the tests point it at tmp_path).
         self._runs_root = RUNS_DIR if runs_root is None else runs_root
-        # Dense engine index -> real index within ``state.model_slots``.
-        self._active_indices: list[int] = []
 
     def _load_models(self, slots, _log) -> None:
         """Lazily resolve and load every active model. Raises on the first failure."""
@@ -109,30 +108,30 @@ class DetectorRunner(QThread):
         self.progress.emit(done, total, Path(image_path).name)
 
     def _on_result(self, result: ImageResult) -> None:
-        """Publish one engine result under its real GUI model slot."""
-        real_idx = self._active_indices[result.model_idx]
-        self.state.results.setdefault(real_idx, []).append(result)
-        self.image_done.emit(real_idx, result)
+        """Publish one engine result under its dense model index."""
+        self.state.results.setdefault(result.model_idx, []).append(result)
+        self.image_done.emit(result.model_idx, result)
 
     def _publish(self, result: RunResult) -> None:
         """Adopt the engine's run record, keeping the streamed results as they are.
 
         :meth:`_on_result` is the single write path: it appends each
-        ``ImageResult`` to ``state.results`` under its real slot as the engine
-        produces it, which is what lets the pages show progress. A completed
-        run therefore holds every result exactly once, and a run that aborts
-        or fails holds exactly the results received before it stopped.
+        ``ImageResult`` to ``state.results`` under its dense model index as the
+        engine produces it, which is what lets the pages show progress. A
+        completed run therefore holds every result exactly once, and a run that
+        aborts or fails holds exactly the results received before it stopped.
 
         This final sync only adopts the run-level fields and fills the one gap
         the streaming can lose: a failure between the engine recording a
-        result and its callback firing. Missing objects are appended; the
-        streamed lists are never rebuilt, so nothing is written twice.
+        result and its callback firing. Missing objects are appended at the
+        same dense key; the streamed lists are never rebuilt, so nothing is
+        written twice.
         """
         state = self.state
         state.run_result = result
         state.run_dir = result.run_dir
         for dense_idx, rows in result.results.items():
-            published = state.results.setdefault(self._active_indices[dense_idx], [])
+            published = state.results.setdefault(dense_idx, [])
             for row in rows:
                 if not any(row is entry for entry in published):
                     published.append(row)
@@ -193,13 +192,12 @@ class DetectorRunner(QThread):
                 self.failed.emit(_("No images selected."))
                 return
 
-            self._active_indices = [state.model_slots.index(slot) for slot in slots]
             stamp = self._create_run_dir(state)
             obs.set_run_id(stamp)
 
             self._load_models(slots, _log)
 
-            state.results = {i: [] for i in range(len(state.model_slots))}
+            state.results = {i: [] for i in range(len(slots))}
             state.run_result = None
             state.verdicts = {}
             config = self._build_config(state, slots, state.run_dir)

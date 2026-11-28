@@ -257,8 +257,8 @@ class ResultsPage(DetectorPage):
         # Table
         rows = []
         for mi, rs in state.results.items():
-            slot = state.model_slots[mi]
-            label = display_name(slot.alias, slot.alias_generated, mi)
+            model = state.model_at(mi)
+            label = display_name(model.alias, model.alias_generated, mi)
             for r in rs:
                 avg_c = (
                     sum(p.conf for p in r.predictions) / len(r.predictions) if r.predictions else 0
@@ -269,7 +269,7 @@ class ResultsPage(DetectorPage):
                 rows.append(
                     (
                         label,
-                        slot.alias,
+                        model.alias,
                         r.image_path,
                         len(r.predictions),
                         len(r.gt),
@@ -359,15 +359,14 @@ class ResultsPage(DetectorPage):
         self.refresh()
 
     def _results_by_model(self):
-        """[(display label, [ImageResult with GT])], in the order of the slots."""
+        """[(display label, [ImageResult with GT])], in dense model order."""
         output = []
-        for mi, rs in sorted(self.state.results.items()):
-            if mi >= len(self.state.model_slots):
-                continue
+        for mi in sorted(self.state.results):
+            rs = self.state.results[mi]
             con_gt = [r for r in rs if r.has_gt]
             if con_gt:
-                slot = self.state.model_slots[mi]
-                output.append((display_name(slot.alias, slot.alias_generated, mi), con_gt))
+                model = self.state.model_at(mi)
+                output.append((display_name(model.alias, model.alias_generated, mi), con_gt))
         return output
 
     def _threshold_common(self, by_model):
@@ -602,7 +601,7 @@ class ResultsPage(DetectorPage):
         """
         rows: list[list[object]] = [list(PAGE_COLUMNS)]
         for mi, results in self.state.results.items():
-            alias = self.state.model_slots[mi].alias
+            alias = self.state.model_at(mi).alias
             for result in results:
                 calibration = self.state.calibration_for(result.image_path)
                 for prediction in result.predictions:
@@ -657,7 +656,7 @@ class ResultsPage(DetectorPage):
         # The detections of THAT image with THAT model.
         dets = []
         for mi, rs in self.state.results.items():
-            if self.state.model_slots[mi].alias != alias:
+            if self.state.model_at(mi).alias != alias:
                 continue
             for r in rs:
                 if Path(r.image_path) == img:

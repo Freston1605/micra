@@ -21,7 +21,7 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from polyx.core.detect.protocol import Instance  # noqa: E402
-from polyx.core.detection_run import ImageResult  # noqa: E402
+from polyx.core.detection_run import ImageResult, ModelInfo, RunResult  # noqa: E402
 from polyx.core.detection_run.result import RunParams  # noqa: E402
 from polyx.gui.detector.pages.errors import ErrorsPage  # noqa: E402
 from polyx.gui.detector.state import DetectorState  # noqa: E402
@@ -67,6 +67,41 @@ def test_errors_page_rows_use_the_display_name_not_the_alias(qapp, tmp_path, sel
 
     assert page.table.item(0, 0).text() == "Model 1"
     assert page.table.item(0, 0).data(Qt.UserRole) == "model_1"
+
+
+def test_errors_page_labels_rows_from_the_run_not_the_current_slots(
+    qapp, tmp_path, selected_language
+):
+    """Dense results keep the run's aliases after the Models tab changes."""
+    from PySide6.QtCore import Qt
+
+    selected_language("en")
+    first = tmp_path / "photos" / "a.png"
+    second = tmp_path / "photos" / "b.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[1].alias = "slot_b"
+    state.model_slots[1].path = tmp_path / "b.pt"
+    run = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a"), ModelInfo(alias="run_c")],
+        results={
+            0: [matched_result(first, model_idx=0)],
+            1: [matched_result(second, model_idx=1)],
+        },
+    )
+    state.run_result = run
+    state.results = run.results
+    page = ErrorsPage(state)
+    page.refresh()
+
+    assert page.table.rowCount() == 2
+    assert [page.table.item(row, 0).text() for row in range(2)] == ["run_a", "run_c"]
+    assert [page.table.item(row, 0).data(Qt.UserRole) for row in range(2)] == [
+        "run_a",
+        "run_c",
+    ]
 
 
 def test_errors_page_says_when_counts_have_no_match_identity(qapp, tmp_path, selected_language):
