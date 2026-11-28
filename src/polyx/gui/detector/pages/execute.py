@@ -323,3 +323,4 @@ class RunPage(DetectorPage):
         self.btn_stop.setEnabled(False)
         self.lbl_progress_info.setText(_("Error: %(message)s") % {"message": msg})
         QMessageBox.critical(self, _("The run failed"), msg)
+        self.state.run_failed.emit()

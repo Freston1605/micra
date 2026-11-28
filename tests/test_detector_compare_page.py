@@ -20,7 +20,7 @@ _SRC = _ROOT / "src"
 if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from polyx.core.detection_run import ImageResult, ModelInfo, RunResult  # noqa: E402
+from polyx.core.detection_run import ImageResult, ModelInfo, RunResult, RunStatus  # noqa: E402
 from polyx.core.detection_run.operating_point import Criterion, Score  # noqa: E402
 from polyx.gui.detector.pages.compare import ComparePage  # noqa: E402
 from polyx.gui.detector.state import DetectorState  # noqa: E402
@@ -58,11 +58,11 @@ def test_compare_shows_the_run_s_dense_models_not_the_current_slots(
     first = tmp_path / "photos" / "a.png"
     second = tmp_path / "photos" / "b.png"
     state = DetectorState()
-    # The Models tab after the run: two adjacent slots with other names.
+    # The Models tab after the run: two non-adjacent slots with other names.
     state.model_slots[0].alias = "slot_a"
     state.model_slots[0].path = tmp_path / "a.pt"
-    state.model_slots[1].alias = "slot_b"
-    state.model_slots[1].path = tmp_path / "b.pt"
+    state.model_slots[2].alias = "slot_c"
+    state.model_slots[2].path = tmp_path / "c.pt"
     run = RunResult(
         run_dir=tmp_path / "run",
         models=[ModelInfo(alias="run_a"), ModelInfo(alias="run_c")],
@@ -119,3 +119,68 @@ def test_a_partial_run_without_a_record_renders_from_the_snapshot(
         page.tbl_per_image.horizontalHeaderItem(column).text()
         for column in range(page.tbl_per_image.columnCount())
     ] == ["Image", "run_a", "run_b"]
+
+
+def test_compare_rerenders_a_failed_partial_run(qapp, tmp_path, selected_language):
+    """A failed run repaints the rows received so far under the snapshot labels."""
+    selected_language("en")
+    first = tmp_path / "photos" / "a.png"
+    state = DetectorState()
+    # The Models tab after the failure no longer matches the models that ran.
+    state.model_slots[0].alias = "renamed"
+    state.model_slots[0].path = tmp_path / "renamed.pt"
+    page = ComparePage(state)
+
+    state.model_snapshot = [
+        ModelInfo(alias="run_a", alias_generated=False),
+        ModelInfo(alias="run_b", alias_generated=False),
+    ]
+    state.results = {
+        0: [misclassified_result(first, model_idx=0)],
+        1: [],
+    }
+    state.run_failed.emit()
+
+    assert page.tbl_summary.rowCount() == 2
+    assert [page.tbl_summary.item(row, 0).text() for row in range(2)] == ["run_a", "run_b"]
+    assert [
+        page.tbl_per_image.horizontalHeaderItem(column).text()
+        for column in range(page.tbl_per_image.columnCount())
+    ] == ["Image", "run_a", "run_b"]
+    assert page.tbl_per_image.rowCount() == 1
+    assert page.tbl_per_image.item(0, 0).text() == "a.png"
+    assert page.tbl_per_image.item(0, 1).text() == "2"
+    assert page.tbl_per_image.item(0, 2).text() == "0"
+
+
+def test_compare_rerenders_an_aborted_partial_run(qapp, tmp_path, selected_language):
+    """An aborted run repaints the rows it received under the run's labels."""
+    selected_language("en")
+    first = tmp_path / "photos" / "a.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "renamed"
+    state.model_slots[0].path = tmp_path / "renamed.pt"
+    page = ComparePage(state)
+
+    run = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a"), ModelInfo(alias="run_b")],
+        results={
+            0: [misclassified_result(first, model_idx=0)],
+            1: [misclassified_result(first, model_idx=1)],
+        },
+        status=RunStatus.ABORTED,
+    )
+    state.run_result = run
+    state.results = run.results
+    state.params = run.params
+    state.run_aborted.emit()
+
+    assert page.tbl_summary.rowCount() == 2
+    assert [page.tbl_summary.item(row, 0).text() for row in range(2)] == ["run_a", "run_b"]
+    assert [
+        page.tbl_per_image.horizontalHeaderItem(column).text()
+        for column in range(page.tbl_per_image.columnCount())
+    ] == ["Image", "run_a", "run_b"]
+    assert page.tbl_per_image.rowCount() == 1
+    assert page.tbl_per_image.item(0, 0).text() == "a.png"

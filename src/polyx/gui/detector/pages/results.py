@@ -205,6 +205,7 @@ class ResultsPage(DetectorPage):
         # Subscribe
         self.state.run_finished.connect(self.refresh)
         self.state.run_aborted.connect(self.refresh)
+        self.state.run_failed.connect(self.refresh)
 
     # ──────────────────────────────────────────
     def refresh(self):

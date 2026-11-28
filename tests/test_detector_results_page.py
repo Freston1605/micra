@@ -383,6 +383,22 @@ def test_results_page_and_export_use_the_run_alias(qapp, tmp_path, selected_lang
     assert {row[_column(rows, "model")] for row in rows[1:]} == {"run_a"}
 
 
+def test_results_page_rerenders_a_failed_partial_run(qapp, tmp_path):
+    """A failed run repaints the rows it received under the snapshot labels."""
+    image = tmp_path / "photos" / "plate.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "renamed"
+    state.model_slots[0].path = tmp_path / "renamed.pt"
+    page = ResultsPage(state)
+
+    state.model_snapshot = [ModelInfo(alias="run_a")]
+    state.results = {0: [misclassified_result(image, model_idx=0)]}
+    state.run_failed.emit()
+
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 0).text() == "run_a"
+
+
 def test_review_in_viewer_finds_the_run_alias(qapp, tmp_path, monkeypatch):
     """The row's stable alias is the run's, so the lookup finds its detections."""
     import polyx.gui.viewer.window as viewer_window

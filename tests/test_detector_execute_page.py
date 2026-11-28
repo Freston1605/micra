@@ -10,8 +10,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import cv2
-import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
@@ -24,19 +22,11 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 from polyx.core.detection_run import ImageResult  # noqa: E402
 from polyx.gui.detector.pages.execute import RunPage  # noqa: E402
 from polyx.gui.detector.state import DetectorState  # noqa: E402
-
-
-def _plate(path: Path) -> Path:
-    image = np.zeros((64, 64, 3), dtype=np.uint8)
-    ok, buffer = cv2.imencode(".png", image)
-    assert ok
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(bytes(buffer))
-    return path
+from tests.conftest import write_image  # noqa: E402
 
 
 def test_run_page_previews_the_result_under_its_dense_index(qapp, tmp_path):
-    plate = _plate(tmp_path / "photos" / "plate.png")
+    plate = write_image(tmp_path / "photos" / "plate.png", width=64, height=64)
     state = DetectorState()
     state.model_slots[0].alias = "model_a"
     state.model_slots[0].path = tmp_path / "a.pt"
@@ -51,3 +41,22 @@ def test_run_page_previews_the_result_under_its_dense_index(qapp, tmp_path):
     assert not page.previews[1].preview.pixmap().isNull()
     assert page.previews[0].preview.pixmap().isNull()
     assert page.previews[2].preview.pixmap().isNull()
+
+
+def test_run_page_emits_run_failed_once(qapp, monkeypatch):
+    """A failure closes the running state and refreshes the pages exactly once."""
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "critical", lambda *_args: None)
+    state = DetectorState()
+    state.set_running(True)
+    page = RunPage(state)
+    emitted: list[bool] = []
+    state.run_failed.connect(lambda: emitted.append(True))
+
+    page._on_failed("boom")
+
+    assert emitted == [True]
+    assert state.is_running() is False
+    assert page.btn_start.isEnabled() is True
+    assert page.btn_stop.isEnabled() is False

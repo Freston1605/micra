@@ -65,6 +65,8 @@ class ComparePage(DetectorPage):
         self.body.addWidget(c2)
 
         self.state.run_finished.connect(self.refresh)
+        self.state.run_aborted.connect(self.refresh)
+        self.state.run_failed.connect(self.refresh)
 
     def refresh(self):
         state = self.state
@@ -107,14 +109,10 @@ class ComparePage(DetectorPage):
         image_set = sorted(
             {x.image_path for mi in dense_indices for x in state.results.get(mi, [])}
         )
-        cols = [_("Image")] + [
-            display_name(
-                state.model_at(mi).alias,
-                state.model_at(mi).alias_generated,
-                mi,
-            )
-            for mi in dense_indices
-        ]
+        cols = [_("Image")]
+        for mi in dense_indices:
+            model = state.model_at(mi)
+            cols.append(display_name(model.alias, model.alias_generated, mi))
         self.tbl_per_image.setColumnCount(len(cols))
         self.tbl_per_image.setHorizontalHeaderLabels(cols)
         self.tbl_per_image.setRowCount(len(image_set))

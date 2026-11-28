@@ -285,13 +285,14 @@ def test_preferences_applies_immediately_and_stops_promising_a_restart(qapp):
 
 def test_detector_retranslates_and_keeps_loaded_state(qapp, tmp_path):
     from polyx.core import i18n
+    from polyx.core.detection_run import RunResult
     from polyx.gui.detector.window import DetectorWindow
 
     i18n.set_language("es")
     window = DetectorWindow()
     image = tmp_path / "placa.png"
     model = tmp_path / "model.pt"
-    run = object()
+    run = RunResult(run_dir=tmp_path / "run")
     window.state.images = [image]
     window.state.model_slots[0].path = model
     window.state.model_slots[0].alias = "my-model"

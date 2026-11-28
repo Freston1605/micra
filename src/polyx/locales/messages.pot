@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-28 00:38-0300\n"
+"POT-Creation-Date: 2026-11-28 00:49-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1037,7 +1037,7 @@ msgstr ""
 msgid "MODULES"
 msgstr ""
 
-#: src/polyx/gui/detector/window.py:162 src/polyx/gui/labeler/window.py:332
+#: src/polyx/gui/detector/window.py:164 src/polyx/gui/labeler/window.py:332
 #: src/polyx/gui/labeler/window.py:359 src/polyx/gui/labeler/window.py:671
 #: src/polyx/gui/launcher.py:517 src/polyx/gui/trainer/window.py:172
 #: src/polyx/gui/viewer/window.py:620
@@ -1285,7 +1285,7 @@ msgstr ""
 msgid "·  %(verdict)s"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:625 src/polyx/gui/detector/review_dialog.py:299
+#: src/polyx/gui/detector/pages/results.py:626 src/polyx/gui/detector/review_dialog.py:299
 #: src/polyx/gui/viewer/window.py:974 src/polyx/gui/viewer/window.py:1034
 msgid "Error"
 msgstr ""
@@ -1334,11 +1334,11 @@ msgstr ""
 msgid "✗ Bad"
 msgstr ""
 
-#: src/polyx/gui/detector/runner.py:195
+#: src/polyx/gui/detector/runner.py:189
 msgid "No models loaded."
 msgstr ""
 
-#: src/polyx/gui/detector/runner.py:198
+#: src/polyx/gui/detector/runner.py:192
 msgid "No images selected."
 msgstr ""
 
@@ -1379,14 +1379,14 @@ msgstr ""
 msgid "Report"
 msgstr ""
 
-#: src/polyx/gui/detector/window.py:169
+#: src/polyx/gui/detector/window.py:171
 msgid ""
 "Original design by Cristofher Ferrada\n"
 "Maintained by Franco Ignacio Valdés Navarro\n"
 "Laboratorio de Química Ambiental · PUCV"
 msgstr ""
 
-#: src/polyx/gui/detector/window.py:142
+#: src/polyx/gui/detector/window.py:144
 msgid "Detector v2"
 msgstr ""
 
@@ -1400,6 +1400,10 @@ msgstr ""
 
 #: src/polyx/gui/detector/window.py:98 src/polyx/gui/trainer/window.py:108
 msgid "● Stopped"
+msgstr ""
+
+#: src/polyx/gui/detector/window.py:99 src/polyx/gui/trainer/window.py:112
+msgid "● Error"
 msgstr ""
 
 #: src/polyx/gui/detector/pages/compare.py:27
@@ -1416,6 +1420,12 @@ msgstr ""
 msgid "Detections per image"
 msgstr ""
 
+#: src/polyx/gui/detector/pages/compare.py:112 src/polyx/gui/detector/pages/errors.py:79
+#: src/polyx/gui/detector/pages/images.py:93 src/polyx/gui/detector/pages/results.py:171
+#: src/polyx/gui/viewer/window.py:270 src/polyx/gui/viewer/window.py:278
+msgid "Image"
+msgstr ""
+
 #: src/polyx/gui/detector/pages/compare.py:39 src/polyx/gui/detector/pages/errors.py:78
 #: src/polyx/gui/detector/pages/results.py:170 src/polyx/gui/trainer/window.py:27
 #: src/polyx/gui/viewer/window.py:344
@@ -1425,12 +1435,6 @@ msgstr ""
 #: src/polyx/gui/detector/pages/compare.py:42 src/polyx/gui/detector/pages/results.py:177
 #: src/polyx/gui/report/sections.py:348
 msgid "Mean conf."
-msgstr ""
-
-#: src/polyx/gui/detector/pages/compare.py:110 src/polyx/gui/detector/pages/errors.py:79
-#: src/polyx/gui/detector/pages/images.py:93 src/polyx/gui/detector/pages/results.py:171
-#: src/polyx/gui/viewer/window.py:270 src/polyx/gui/viewer/window.py:278
-msgid "Image"
 msgstr ""
 
 #: src/polyx/gui/detector/pages/compare.py:46 src/polyx/gui/detector/pages/results.py:83
@@ -1449,7 +1453,7 @@ msgid "Filters"
 msgstr ""
 
 #: src/polyx/gui/detector/pages/errors.py:47 src/polyx/gui/detector/pages/errors.py:56
-#: src/polyx/gui/detector/pages/errors.py:114
+#: src/polyx/gui/detector/pages/errors.py:129
 msgid "All"
 msgstr ""
 
@@ -1481,14 +1485,14 @@ msgstr ""
 msgid "Conf"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/errors.py:189
+#: src/polyx/gui/detector/pages/errors.py:193
 #, python-format
 msgid "%(count)d error"
 msgid_plural "%(count)d errors"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/errors.py:192
+#: src/polyx/gui/detector/pages/errors.py:196
 #, python-format
 msgid ""
 "%(count)d image has ground truth and error counts, but the folder does not record which box was "
@@ -2603,32 +2607,32 @@ msgid ""
 "model again."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:310
+#: src/polyx/gui/detector/pages/results.py:311
 msgid "Re-reading ground truth…"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:310 src/polyx/gui/labeler/window.py:478
+#: src/polyx/gui/detector/pages/results.py:311 src/polyx/gui/labeler/window.py:478
 msgid "Cancel"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:311 src/polyx/gui/detector/pages/results.py:332
+#: src/polyx/gui/detector/pages/results.py:312 src/polyx/gui/detector/pages/results.py:333
 msgid "Reload GT"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:615
+#: src/polyx/gui/detector/pages/results.py:616
 msgid "Export CSV"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:615
+#: src/polyx/gui/detector/pages/results.py:616
 msgid "CSV (*.csv)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:99 src/polyx/gui/detector/pages/results.py:239
+#: src/polyx/gui/detector/pages/results.py:99 src/polyx/gui/detector/pages/results.py:240
 #, python-format
 msgid "Precision (%(criterion)s):  —"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:100 src/polyx/gui/detector/pages/results.py:245
+#: src/polyx/gui/detector/pages/results.py:100 src/polyx/gui/detector/pages/results.py:246
 #, python-format
 msgid "Recall (%(criterion)s):  —"
 msgstr ""
@@ -2637,11 +2641,11 @@ msgstr ""
 msgid "Pred"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:306
+#: src/polyx/gui/detector/pages/results.py:307
 msgid "There are no results to recompute: run the detection first."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:343
+#: src/polyx/gui/detector/pages/results.py:344
 #, python-format
 msgid ""
 "✓ %(count)s image with different ground truth: %(items)s. Metrics and control images updated; "
@@ -2652,67 +2656,67 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/results.py:349
+#: src/polyx/gui/detector/pages/results.py:350
 #, python-format
 msgid "✓ Reviewed %(count)s images: no .txt changed since the run. There was nothing to recompute."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:357
+#: src/polyx/gui/detector/pages/results.py:358
 msgid "Cancelled halfway: press again to finish."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:417
+#: src/polyx/gui/detector/pages/results.py:418
 #, python-format
 msgid "%(model)s — conf %(threshold)s: F1 %(f1)s (%(criterion)s; P %(precision)s / R %(recall)s)."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:578 src/polyx/gui/report/figures.py:244
+#: src/polyx/gui/detector/pages/results.py:579 src/polyx/gui/report/figures.py:244
 msgid "Equivalent diameter (μm)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:579 src/polyx/gui/report/figures.py:233
+#: src/polyx/gui/detector/pages/results.py:580 src/polyx/gui/report/figures.py:233
 #: src/polyx/gui/report/figures.py:245
 msgid "Frequency"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:580
+#: src/polyx/gui/detector/pages/results.py:581
 msgid "Size distribution by class"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:649 src/polyx/gui/detector/pages/results.py:666
-#: src/polyx/gui/detector/pages/results.py:673
+#: src/polyx/gui/detector/pages/results.py:650 src/polyx/gui/detector/pages/results.py:667
+#: src/polyx/gui/detector/pages/results.py:674
 msgid "Review"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:649
+#: src/polyx/gui/detector/pages/results.py:650
 msgid "Select a row from the table below first."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:666
+#: src/polyx/gui/detector/pages/results.py:667
 msgid "That image has no detections to review."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:236
+#: src/polyx/gui/detector/pages/results.py:237
 #, python-format
 msgid "Precision (%(criterion)s):  %(value).3f"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:242
+#: src/polyx/gui/detector/pages/results.py:243
 #, python-format
 msgid "Recall (%(criterion)s):  %(value).3f"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:342
+#: src/polyx/gui/detector/pages/results.py:343
 #, python-format
 msgid " and %(count)s more"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:353
+#: src/polyx/gui/detector/pages/results.py:354
 #, python-format
 msgid "(%(count)s with no control .txt.)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:461
+#: src/polyx/gui/detector/pages/results.py:462
 #, python-format
 msgid ""
 "➜ Each model prefers a different threshold. Use %(threshold).2f for both (mean F1 %(mean).3f, "
@@ -2720,43 +2724,43 @@ msgid ""
 "Parameters and run again."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:432
+#: src/polyx/gui/detector/pages/results.py:433
 #, python-format
 msgid ""
 "%(sign)s %(head)s  Its best threshold is %(threshold).2f: F1 %(f1b).3f (%(delta)+.3f), P "
 "%(pb).3f / R %(rb).3f."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:448
+#: src/polyx/gui/detector/pages/results.py:449
 #, python-format
 msgid ""
 "✓ %(head)s  It is the best in the explored range; below %(threshold)g there are no computed "
 "detections and they cannot be recovered by filtering."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:472
+#: src/polyx/gui/detector/pages/results.py:473
 #, python-format
 msgid ""
 "➜ Change the confidence to %(threshold).2f in Parameters and run again before generating the "
 "report."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:479
+#: src/polyx/gui/detector/pages/results.py:480
 #, python-format
 msgid "➜ Confidence %(threshold)g is already a good operating point. You can generate the report."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:589 src/polyx/gui/trainer/pages/train.py:106
+#: src/polyx/gui/detector/pages/results.py:590 src/polyx/gui/trainer/pages/train.py:106
 #, python-format
 msgid "matplotlib is not available: %(error)s"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:625
+#: src/polyx/gui/detector/pages/results.py:626
 #, python-format
 msgid "Could not save: %(error)s"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:673
+#: src/polyx/gui/detector/pages/results.py:674
 #, python-format
 msgid "Could not open the Viewer: %(error)s"
 msgstr ""
@@ -4453,10 +4457,6 @@ msgstr ""
 
 #: src/polyx/gui/trainer/window.py:101
 msgid "● Training…"
-msgstr ""
-
-#: src/polyx/gui/trainer/window.py:112
-msgid "● Error"
 msgstr ""
 
 #: src/polyx/gui/trainer/window.py:177

@@ -96,36 +96,40 @@ class ErrorsPage(DetectorPage):
         # Connect
         self.state.run_finished.connect(self._refresh_model_combo)
         self.state.run_aborted.connect(self._refresh_model_combo)
+        self.state.run_failed.connect(self._refresh_model_combo)
         self.state.models_changed.connect(self._refresh_model_combo)
         self._refresh_model_combo()
 
     def _refresh_model_combo(self):
         """Offer the models whose errors the page can show.
 
-        Once a run has started, its dense result keys are the authority: the
-        filter lists the run's models in run order, so a Models-tab change
-        afterwards cannot invent an entry for a model that did not run. Before
-        a run there are no result keys and the loaded slots are all that exist.
+        The source follows the run's lifecycle: a published run record decides
+        which models ran and what they are called; a run that streamed results
+        but never published one is labelled from its run-start snapshot; only
+        before any run are the loaded slots offered. A Models-tab change
+        afterwards therefore cannot invent an entry for a model that did not
+        run. Entries from the run are keyed by their dense model index, which is
+        also the key of the results they filter; entries from the pre-run slots
+        keep the slot index.
         """
         state = self.state
-        previous = self.combo_model.currentData()
+        run = state.run_result
+        if run is not None and run.models:
+            entries = list(enumerate(run.models))
+        elif state.model_snapshot:
+            entries = list(enumerate(state.model_snapshot))
+        else:
+            entries = [
+                (slot_idx, slot)
+                for slot_idx, slot in enumerate(state.model_slots)
+                if slot.path is not None
+            ]
         self.combo_model.blockSignals(True)
         self.combo_model.clear()
         self.combo_model.addItem(_("All"), -1)
-        if state.results:
-            for dense_idx in sorted(state.results):
-                model = state.model_at(dense_idx)
-                self.combo_model.addItem(
-                    display_name(model.alias, model.alias_generated, dense_idx), dense_idx
-                )
-        else:
-            for slot_idx, slot in enumerate(state.model_slots):
-                if slot.path is not None:
-                    self.combo_model.addItem(
-                        display_name(slot.alias, slot.alias_generated, slot_idx), slot_idx
-                    )
-        restored = self.combo_model.findData(previous) if previous is not None else -1
-        self.combo_model.setCurrentIndex(max(restored, 0))
+        for index, model in entries:
+            self.combo_model.addItem(display_name(model.alias, model.alias_generated, index), index)
+        self.combo_model.setCurrentIndex(0)
         self.combo_model.blockSignals(False)
         self.refresh()
 

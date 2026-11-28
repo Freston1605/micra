@@ -512,23 +512,49 @@ def test_a_run_snapshots_its_active_models_in_dense_order(qapp, tmp_path):
     assert snapshot[0].names == {0: "PET"}
 
 
-def test_a_run_failing_before_it_publishes_clears_the_previous_run(qapp, tmp_path):
-    """A rejected new attempt must not leave the last batch on the pages."""
+def test_a_refused_attempt_keeps_the_previous_run(qapp, tmp_path):
+    """A request that cannot start is not a run: the old batch stays intact."""
     path = _plate(tmp_path / "photos" / "plate.png")
     state = _state(tmp_path, [path])
     _execute(_runner_with_folder(state, tmp_path))
     state.set_verdict(0, path, "buena")
-    assert state.run_result is not None
+    previous_result = state.run_result
+    previous_results = state.results
+    previous_snapshot = state.model_snapshot
+    previous_run_dir = state.run_dir
+    assert previous_result is not None
 
     state.model_slots[0].path = None  # nothing active
     events = _execute(DetectorRunner(state, runs_root=tmp_path / "runs_second"))
 
     assert events["failed"] == ["No hay modelos cargados."]
-    assert state.results == {}
-    assert state.run_result is None
-    assert state.model_snapshot == []
-    assert state.verdicts == {}
-    assert state.run_dir is None
+    assert state.results == previous_results
+    assert state.run_result is previous_result
+    assert state.model_snapshot == previous_snapshot
+    assert state.verdicts == {(0, path): "buena"}
+    assert state.run_dir == previous_run_dir
+    assert not (tmp_path / "runs_second").exists()
+
+
+def test_an_attempt_with_no_images_keeps_the_previous_run(qapp, tmp_path):
+    """The no-images refusal is decided before the attempt owns the pages."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    _execute(_runner_with_folder(state, tmp_path))
+    state.set_verdict(0, path, "buena")
+    previous_result = state.run_result
+    previous_results = state.results
+    previous_run_dir = state.run_dir
+
+    state.images = []
+    events = _execute(DetectorRunner(state, runs_root=tmp_path / "runs_second"))
+
+    assert events["failed"] == ["No hay imágenes seleccionadas."]
+    assert state.results == previous_results
+    assert state.run_result is previous_result
+    assert state.verdicts == {(0, path): "buena"}
+    assert state.run_dir == previous_run_dir
+    assert not (tmp_path / "runs_second").exists()
 
 
 def test_a_model_load_failure_clears_the_previous_run_and_keeps_the_snapshot(qapp, tmp_path):

@@ -96,8 +96,10 @@ class DetectorWindow(i18n_qt.RetranslateOnLanguageChange, QMainWindow):
         self.state.run_started.connect(lambda: self._set_status(_("● Running…"), T.ACCENT))
         self.state.run_finished.connect(lambda: self._set_status(_("● Finished"), T.OK))
         self.state.run_aborted.connect(lambda: self._set_status(_("● Stopped"), T.WARN))
+        self.state.run_failed.connect(lambda: self._set_status(_("● Error"), T.ERR))
         self.state.run_finished.connect(self._apply_pending_retranslation)
         self.state.run_aborted.connect(self._apply_pending_retranslation)
+        self.state.run_failed.connect(self._apply_pending_retranslation)
 
     # ── Language ───────────────────────────────────────────────
     def retranslate(self) -> None:

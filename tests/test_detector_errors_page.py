@@ -167,7 +167,7 @@ def test_errors_model_filter_lists_the_active_models_before_a_run(
     ]
 
 
-def test_errors_model_filter_keeps_the_run_models_after_a_models_change(
+def test_errors_model_filter_keeps_the_run_models_and_resets_to_all_after_a_models_change(
     qapp, tmp_path, selected_language
 ):
     """A post-run rename cannot relabel the filter or the rows of the run."""
@@ -191,6 +191,7 @@ def test_errors_model_filter_keeps_the_run_models_after_a_models_change(
     state.results = run.results
     page = ErrorsPage(state)
     page.combo_model.setCurrentIndex(2)
+    assert page.combo_model.currentData() == 1
 
     state.model_slots[0].alias = "renamed_a"
     state.model_slots[1].alias = "renamed_b"
@@ -205,15 +206,15 @@ def test_errors_model_filter_keeps_the_run_models_after_a_models_change(
         "run_b",
     ]
     assert [page.combo_model.itemData(i) for i in range(page.combo_model.count())] == [-1, 0, 1]
-    assert page.combo_model.currentData() == 1
-    assert page.table.rowCount() == 1
-    assert page.table.item(0, 0).text() == "run_b"
+    assert page.combo_model.currentData() == -1
+    assert page.table.rowCount() == 2
+    assert [page.table.item(row, 0).text() for row in range(2)] == ["run_a", "run_b"]
 
 
 def test_errors_model_filter_falls_back_to_all_when_the_selected_model_did_not_run(
     qapp, tmp_path, selected_language
 ):
-    """A selection the next run no longer has reads as the unfiltered list."""
+    """A later run replaces the offered entries and the filter returns to All."""
     selected_language("en")
     first = tmp_path / "a.png"
     second = tmp_path / "b.png"
@@ -281,6 +282,66 @@ def test_errors_model_filter_rebuilds_when_a_run_aborts(qapp, tmp_path, selected
     ]
     page.combo_model.setCurrentIndex(2)
     assert page.table.rowCount() == 0
+
+
+def test_errors_model_filter_follows_a_failed_run(qapp, tmp_path, selected_language):
+    """A failed attempt with no record lists its snapshot models, densely keyed."""
+    selected_language("en")
+    first = tmp_path / "photos" / "a.png"
+    second = tmp_path / "photos" / "b.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[2].alias = "slot_c"
+    state.model_slots[2].path = tmp_path / "c.pt"
+    page = ErrorsPage(state)
+
+    state.model_snapshot = [
+        ModelInfo(alias="run_a", alias_generated=False),
+        ModelInfo(alias="run_c", alias_generated=False),
+    ]
+    state.results = {
+        0: [matched_result(first, model_idx=0)],
+        1: [matched_result(second, model_idx=1)],
+    }
+    state.run_failed.emit()
+
+    assert [page.combo_model.itemText(i) for i in range(page.combo_model.count())] == [
+        "All",
+        "run_a",
+        "run_c",
+    ]
+    assert [page.combo_model.itemData(i) for i in range(page.combo_model.count())] == [-1, 0, 1]
+
+    page.combo_model.setCurrentIndex(2)
+    assert page.combo_model.currentData() == 1
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 0).text() == "run_c"
+    assert page.table.item(0, 1).text() == "b.png"
+
+
+def test_errors_model_filter_lists_the_record_models_with_empty_results(
+    qapp, tmp_path, selected_language
+):
+    """The record, not the current slots, decides which models are offered."""
+    selected_language("en")
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.run_result = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a"), ModelInfo(alias="run_b")],
+        results={},
+    )
+    state.results = {}
+    page = ErrorsPage(state)
+
+    assert [page.combo_model.itemText(i) for i in range(page.combo_model.count())] == [
+        "All",
+        "run_a",
+        "run_b",
+    ]
+    assert [page.combo_model.itemData(i) for i in range(page.combo_model.count())] == [-1, 0, 1]
 
 
 def test_errors_page_says_when_counts_have_no_match_identity(qapp, tmp_path, selected_language):

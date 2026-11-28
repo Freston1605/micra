@@ -46,6 +46,7 @@ class DetectorState(QObject):
     run_finished = Signal()
     run_image_done = Signal(int, object)  # dense model index, ImageResult
     run_aborted = Signal()
+    run_failed = Signal()
 
     def __init__(self):
         super().__init__()
