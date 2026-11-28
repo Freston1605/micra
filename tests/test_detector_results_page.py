@@ -292,6 +292,31 @@ def test_results_kpis_are_the_counters_of_the_run_s_match(qapp, tmp_path):
     assert (match.tp, match.fp, match.fn) == (1, 1, 0)
 
 
+def test_results_kpis_and_per_image_table_show_the_same_criterion(
+    qapp, tmp_path, selected_language
+):
+    """One contract: the page's localisation counters, labelled as such.
+
+    The KPI row and the per-image table used to show different definitions of
+    "True positives" under the same header. A wrong-class box is found under
+    localisation, so both surfaces count it and both say the criterion.
+    """
+    selected_language("en")
+    state = DetectorState()
+    state.model_slots[0].alias = "m0"
+    state.model_slots[0].path = tmp_path / "m0.pt"
+    state.results = {0: [misclassified_result(tmp_path / "plate.png")]}
+    page = ResultsPage(state)
+    page.refresh()
+
+    assert page.kpi_tp.lbl_title.text() == "True positives (localisation)"
+    assert page.kpi_tp.lbl_value.text() == "2"
+    assert page.table.horizontalHeaderItem(4).text() == "True positives (localisation)"
+    assert page.table.item(0, 4).text() == "2"
+    assert page.table.item(0, 5).text() == "0"
+    assert page.table.item(0, 6).text() == "0"
+
+
 def test_results_sweep_keeps_the_run_s_mask_rule(qapp, tmp_path):
     """The hypothetical sweep re-matches with the rule the run recorded.
 

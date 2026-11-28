@@ -74,8 +74,9 @@ the audit, palette, ruff and ty without the suite:
       staged changes is scanned in full; `tests/` keeps the added-lines rule
       so grandfathered Spanish names still pass.
 - [ ] `i18n-audit` — the committed `messages.pot` matches the source tree;
-      every shipped entry is translated with matching `%(name)s` placeholders,
-      English placeholder names and no `(s)`/`(es)` parentheticals; no
+      every shipped entry is translated with matching `%(name)s` placeholders
+      whose names are Python identifiers, English placeholder names and no
+      `(s)`/`(es)` parentheticals; no
       user-visible literal reaches a known Qt, CLI or HTML sink without a
       translation call; and no Spanish string constant survives anywhere in
       `src/polyx`. Runs as `python tools/check_i18n.py` and in pre-commit.

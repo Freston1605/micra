@@ -199,7 +199,13 @@ The figures are the same shape for both families:
   This is the selection metric, and the checkpoint with the best value is the
   one kept as `best.pt`. The threshold and IoU rule are recorded beside it.
 - `localisation_score` — the same operating-point F1 with the class ignored,
-  reported beside the selection score.
+  reported beside the selection score. A well-placed box of the wrong polymer
+  is a true positive here and adds no false positive or false negative; the
+  figure carries `revision: 2`, so an artifact without that marker predates
+  #224 and its localisation score is not directly comparable. Matching is
+  greedy and confidence-ordered: predictions are visited from highest to
+  lowest confidence and each is paired, at most once, with the best unused
+  ground truth above the IoU threshold before the class is checked.
 - `mAP50` and `mAP50-95` — COCO interpolated average precision, class-aware,
   with the reference per-image/per-category 100-detection cap. The cap is
   applied per image **and category**, so a plate crowded with one polymer

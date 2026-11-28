@@ -66,6 +66,21 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `gh attestation verify` — with the pre-release rule stated once.
 
 ### Changed
+- **Localisation credits a correctly located box with the wrong polymer (#224).**
+  A well-placed box of the wrong class used to leave the numerator and both
+  denominators, so a perfectly located particle with the wrong polymer scored
+  F1 0.0 and a mixed plate could score 1.0 while half its particles were
+  uncredited. Localisation now counts the pair as a true positive and adds no
+  false positive or false negative; with class still counts it as a false
+  positive of the predicted class and a false negative of the real one.
+  `localisation_score` carries `revision: 2`; artifacts without that marker
+  were scored with revision 1 (the old arithmetic), so their localisation
+  figures are not directly comparable with a current run. The Results page,
+  the Compare table and the report label their counters with the criterion;
+  the report's table shows localisation counters and its note converts them to
+  the with-class figure. `CLAUDE.md` also records the matching rule:
+  confidence-ordered, one-to-one pairing before the class check, with COCO's
+  cap of 100 predictions per image and class.
 - **Recovery reads callback state by recorded identity, not key spelling
   (#249 review).** Every checkpoint now states its recovery layout version,
   the exact `state_key` of the checkpoint and early-stopping callbacks, and the
@@ -168,6 +183,28 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script — the `polyx-*` aliases included — remains.
 
 ### Fixed
+- **The local gate warns when the environment predates the pins (#81).**
+  `tools/check.py` selects an interpreter that may belong to another checkout,
+  so `uv lock --check` proved the two dependency files agree with each other
+  while the environment that actually runs the suite could be older than both.
+  The gate now compares `pyproject.toml` and `uv.lock` against the newest
+  `.dist-info` in the selected interpreter's `site-packages` and prints a
+  warning naming the file that changed and `uv sync --extra gui`, without
+  failing: a probe that cannot answer (a foreign interpreter, a read-only
+  tree) stays silent, and machines without `uv` keep the lock check's own
+  warning. Documented in `CONTRIBUTING.md`.
+- **The translation audit rejects a malformed placeholder name (#79).** The
+  placeholder scanner only matched names that already satisfy
+  `[A-Za-z_][A-Za-z0-9_]*`, so `%(nombre de modelo)s` contributed nothing to
+  either side of the comparison and a message id plus translation that shared
+  the typo passed the gate, while the pair raises `ValueError` the first time
+  it is formatted. `po.malformed_placeholders` now reports every `%(...)s`
+  token whose name is not an identifier, across Python's full set of `%`
+  conversions (`d i o u x X e E f F g G c r s a`), and the catalog check fails
+  on it for the message id, the plural message id and every translation form,
+  naming the file, the translation's line and the token. Prose that is not a
+  substitution — `50%(w/w) of the mass` — stays out of the report: a space is
+  read as a format flag only when a real width follows it.
 - **Fix review of the benchmark-integrity work (#237–#243).** A campaign
   resubmitted with `resume=true` no longer treats an existing `completion.json`
   as proof enough: the finished family goes through the engine, which verifies
