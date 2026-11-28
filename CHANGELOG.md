@@ -66,6 +66,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `gh attestation verify` — with the pre-release rule stated once.
 
 ### Changed
+- **Detector GUI results follow the run's dense model order (#253).** Result
+  pages, review verdicts and live previews now use the engine's dense active
+  model index instead of a translation to Models-tab slots. Models in
+  non-adjacent slots appear separately, two slots that share an alias and
+  weights path keep their own results, and Compare, Results, Errors, Report and
+  the review dialog label old results from the run record rather than the
+  current Models tab. A one-model run exports labelled photos without the
+  `__<alias>` suffix; a multi-model run keeps it. The run folder, `run.json`,
+  `detections.csv`, the CLI and the HTML report are unchanged.
 - **Localisation credits a correctly located box with the wrong polymer (#224).**
   A well-placed box of the wrong class used to leave the numerator and both
   denominators, so a perfectly located particle with the wrong polymer scored

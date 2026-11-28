@@ -44,8 +44,9 @@ class DetectorState(QObject):
     run_progress = Signal(int, int, str)  # done, total, last_image
     run_started = Signal()
     run_finished = Signal()
-    run_image_done = Signal(int, object)  # model_idx, ImageResult
+    run_image_done = Signal(int, object)  # dense model index, ImageResult
     run_aborted = Signal()
+    run_failed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -63,14 +64,20 @@ class DetectorState(QObject):
         # this policy, the runner hands it to the engine and the run records
         # the effective per-photo values it produced.
         self.calibration = CalibrationPolicy()
-        # results[real_model_slot_idx] -> List[ImageResult]. The engine numbers
-        # its active models densely; the runner maps those back to these slots.
+        # results[dense_model_idx] -> List[ImageResult]. The key is the engine's
+        # dense active-model index (0..N-1); the run's model list is the
+        # authority for the labels, so a later Models-tab change cannot relabel
+        # results already produced.
         self.results: dict[int, list[ImageResult]] = {}
         # The canonical run record backing this GUI state, once a run exists.
         # Calibration has one owner and it is that record: the effective scale
         # of each photo lives in ``run_result.calibrations``, keyed by path.
         self.run_result: RunResult | None = None
-        # Review verdicts are GUI state, keyed by real model slot and image.
+        # Run-start snapshot of the active models in dense order. It labels the
+        # results of a run that ended before publishing a record, without
+        # reading the mutable Models-tab slots.
+        self.model_snapshot: list[ModelInfo] = []
+        # Review verdicts are GUI state, keyed by dense model index and image.
         self.verdicts: dict[tuple[int, Path], str] = {}
         # run timestamp/folder
         self.run_dir: Path | None = None
@@ -80,6 +87,45 @@ class DetectorState(QObject):
     # ── helpers ──
     def active_models(self) -> list[ModelSlot]:
         return [s for s in self.model_slots if s.path is not None]
+
+    def record_run_models(self, slots: list[ModelSlot]) -> None:
+        """Freeze the active models in dense order for this run's labels.
+
+        Each slot is copied into a :class:`ModelInfo` value: the snapshot must
+        not follow a later Models-tab edit, and it must outlive a failure that
+        never publishes a run record.
+        """
+        self.model_snapshot = [
+            ModelInfo(
+                alias=slot.alias,
+                alias_generated=slot.alias_generated,
+                path=slot.path,
+                model_type=slot.model_type,
+                names=dict(slot.names or {}),
+                sha256=slot.sha256,
+            )
+            for slot in slots
+        ]
+
+    def model_at(self, dense_idx: int) -> ModelInfo:
+        """The model that produced the results filed under ``dense_idx``.
+
+        Resolution order: the published run record, the run-start snapshot,
+        then the current slot at the same index for a state built by hand. The
+        record keeps the run's active models in dense order, so changing the
+        Models tab afterwards does not relabel results already produced; the
+        snapshot covers a partial run that ended without publishing a record.
+        A dense key with no matching slot reads as its generated placeholder
+        instead of crashing the page.
+        """
+        run = self.run_result
+        if run is not None and 0 <= dense_idx < len(run.models):
+            return run.models[dense_idx]
+        if 0 <= dense_idx < len(self.model_snapshot):
+            return self.model_snapshot[dense_idx]
+        if 0 <= dense_idx < len(self.model_slots):
+            return self.model_slots[dense_idx]
+        return ModelInfo(alias=generated_alias(dense_idx), alias_generated=True)
 
     def calibration_for(self, image: Path) -> Calibration | None:
         """The scale the run recorded for ``image``, or ``None`` when it cannot tell.
@@ -91,7 +137,7 @@ class DetectorState(QObject):
         return self.run_result.calibration_for(image) if self.run_result else None
 
     def set_verdict(self, model_idx: int, image_path: Path, verdict: str | None) -> None:
-        """Store (or clear) the review verdict of one image for one model slot."""
+        """Store (or clear) the review verdict of one image for one model."""
         key = (model_idx, Path(image_path))
         if verdict is None:
             self.verdicts.pop(key, None)
@@ -126,5 +172,6 @@ class DetectorState(QObject):
     def reset_results(self):
         self.results = {}
         self.run_result = None
+        self.model_snapshot = []
         self.verdicts = {}
         self.run_dir = None

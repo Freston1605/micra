@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-27 23:17-0300\n"
+"POT-Creation-Date: 2026-11-28 00:49-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1037,7 +1037,7 @@ msgstr ""
 msgid "MODULES"
 msgstr ""
 
-#: src/polyx/gui/detector/window.py:162 src/polyx/gui/labeler/window.py:332
+#: src/polyx/gui/detector/window.py:164 src/polyx/gui/labeler/window.py:332
 #: src/polyx/gui/labeler/window.py:359 src/polyx/gui/labeler/window.py:671
 #: src/polyx/gui/launcher.py:517 src/polyx/gui/trainer/window.py:172
 #: src/polyx/gui/viewer/window.py:620
@@ -1251,19 +1251,19 @@ msgstr ""
 msgid "Save corrections (.txt YOLO)"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:224
+#: src/polyx/gui/detector/review_dialog.py:225
 #, python-format
 msgid "Detection review — %(count)d image"
 msgid_plural "Detection review — %(count)d images"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/review_dialog.py:229
+#: src/polyx/gui/detector/review_dialog.py:230
 #, python-format
 msgid " (✓%(good)d ✗%(bad)d) — MICRA"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:254
+#: src/polyx/gui/detector/review_dialog.py:255
 msgid "unreviewed"
 msgstr ""
 
@@ -1275,42 +1275,42 @@ msgstr ""
 msgid "Class (for new boxes):"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:245
+#: src/polyx/gui/detector/review_dialog.py:246
 #, python-format
 msgid "Predictions: %(count)d"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:255
+#: src/polyx/gui/detector/review_dialog.py:256
 #, python-format
 msgid "·  %(verdict)s"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:626 src/polyx/gui/detector/review_dialog.py:298
+#: src/polyx/gui/detector/pages/results.py:626 src/polyx/gui/detector/review_dialog.py:299
 #: src/polyx/gui/viewer/window.py:974 src/polyx/gui/viewer/window.py:1034
 msgid "Error"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:298 src/polyx/gui/viewer/window.py:1034
+#: src/polyx/gui/detector/review_dialog.py:299 src/polyx/gui/viewer/window.py:1034
 msgid "Could not read the image."
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:318
+#: src/polyx/gui/detector/review_dialog.py:319
 #, python-format
 msgid "✓ Saved: %(path)s  (%(count)d box)"
 msgid_plural "✓ Saved: %(path)s  (%(count)d boxes)"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/review_dialog.py:335 src/polyx/gui/trainer/pages/dataset.py:69
+#: src/polyx/gui/detector/review_dialog.py:336 src/polyx/gui/trainer/pages/dataset.py:69
 #: src/polyx/gui/trainer/window.py:28 src/polyx/pipeline/coco_import.py:353
 msgid "Dataset"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:336
+#: src/polyx/gui/detector/review_dialog.py:337
 msgid "There are no boxes in this image. Correct or draw some before sending it."
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:349
+#: src/polyx/gui/detector/review_dialog.py:350
 #, python-format
 msgid ""
 "Sent to the retraining dataset — %(count)d image accumulated in dataset_correcciones/. Once you "
@@ -1321,24 +1321,24 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/review_dialog.py:248
+#: src/polyx/gui/detector/review_dialog.py:249
 #, python-format
 msgid "GT: %(count)d"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:254
+#: src/polyx/gui/detector/review_dialog.py:255
 msgid "✓ Good"
 msgstr ""
 
-#: src/polyx/gui/detector/review_dialog.py:254
+#: src/polyx/gui/detector/review_dialog.py:255
 msgid "✗ Bad"
 msgstr ""
 
-#: src/polyx/gui/detector/runner.py:190
+#: src/polyx/gui/detector/runner.py:189
 msgid "No models loaded."
 msgstr ""
 
-#: src/polyx/gui/detector/runner.py:193
+#: src/polyx/gui/detector/runner.py:192
 msgid "No images selected."
 msgstr ""
 
@@ -1379,14 +1379,14 @@ msgstr ""
 msgid "Report"
 msgstr ""
 
-#: src/polyx/gui/detector/window.py:169
+#: src/polyx/gui/detector/window.py:171
 msgid ""
 "Original design by Cristofher Ferrada\n"
 "Maintained by Franco Ignacio Valdés Navarro\n"
 "Laboratorio de Química Ambiental · PUCV"
 msgstr ""
 
-#: src/polyx/gui/detector/window.py:142
+#: src/polyx/gui/detector/window.py:144
 msgid "Detector v2"
 msgstr ""
 
@@ -1400,6 +1400,10 @@ msgstr ""
 
 #: src/polyx/gui/detector/window.py:98 src/polyx/gui/trainer/window.py:108
 msgid "● Stopped"
+msgstr ""
+
+#: src/polyx/gui/detector/window.py:99 src/polyx/gui/trainer/window.py:112
+msgid "● Error"
 msgstr ""
 
 #: src/polyx/gui/detector/pages/compare.py:27
@@ -1416,6 +1420,12 @@ msgstr ""
 msgid "Detections per image"
 msgstr ""
 
+#: src/polyx/gui/detector/pages/compare.py:112 src/polyx/gui/detector/pages/errors.py:79
+#: src/polyx/gui/detector/pages/images.py:93 src/polyx/gui/detector/pages/results.py:171
+#: src/polyx/gui/viewer/window.py:270 src/polyx/gui/viewer/window.py:278
+msgid "Image"
+msgstr ""
+
 #: src/polyx/gui/detector/pages/compare.py:39 src/polyx/gui/detector/pages/errors.py:78
 #: src/polyx/gui/detector/pages/results.py:170 src/polyx/gui/trainer/window.py:27
 #: src/polyx/gui/viewer/window.py:344
@@ -1425,12 +1435,6 @@ msgstr ""
 #: src/polyx/gui/detector/pages/compare.py:42 src/polyx/gui/detector/pages/results.py:177
 #: src/polyx/gui/report/sections.py:348
 msgid "Mean conf."
-msgstr ""
-
-#: src/polyx/gui/detector/pages/compare.py:110 src/polyx/gui/detector/pages/errors.py:79
-#: src/polyx/gui/detector/pages/images.py:93 src/polyx/gui/detector/pages/results.py:171
-#: src/polyx/gui/viewer/window.py:270 src/polyx/gui/viewer/window.py:278
-msgid "Image"
 msgstr ""
 
 #: src/polyx/gui/detector/pages/compare.py:46 src/polyx/gui/detector/pages/results.py:83
@@ -1449,7 +1453,7 @@ msgid "Filters"
 msgstr ""
 
 #: src/polyx/gui/detector/pages/errors.py:47 src/polyx/gui/detector/pages/errors.py:56
-#: src/polyx/gui/detector/pages/errors.py:103
+#: src/polyx/gui/detector/pages/errors.py:129
 msgid "All"
 msgstr ""
 
@@ -1481,14 +1485,14 @@ msgstr ""
 msgid "Conf"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/errors.py:166
+#: src/polyx/gui/detector/pages/errors.py:193
 #, python-format
 msgid "%(count)d error"
 msgid_plural "%(count)d errors"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/errors.py:169
+#: src/polyx/gui/detector/pages/errors.py:196
 #, python-format
 msgid ""
 "%(count)d image has ground truth and error counts, but the folder does not record which box was "
@@ -1549,15 +1553,15 @@ msgstr ""
 msgid "Stopping…"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/execute.py:310
+#: src/polyx/gui/detector/pages/execute.py:307
 msgid "Ready. Press “Review full screen” to inspect and correct."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/execute.py:320
+#: src/polyx/gui/detector/pages/execute.py:317
 msgid "Stopped by the user."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/execute.py:328
+#: src/polyx/gui/detector/pages/execute.py:325
 msgid "The run failed"
 msgstr ""
 
@@ -1579,7 +1583,7 @@ msgid "Select images in the Images tab."
 msgstr ""
 
 #: src/polyx/gui/detector/pages/execute.py:270 src/polyx/gui/detector/pages/execute.py:274
-#: src/polyx/gui/detector/pages/report.py:394 src/polyx/gui/trainer/pages/train.py:426
+#: src/polyx/gui/detector/pages/report.py:395 src/polyx/gui/trainer/pages/train.py:426
 msgid "No results"
 msgstr ""
 
@@ -1596,7 +1600,7 @@ msgstr ""
 msgid "Processing %(name)s  (%(done)d/%(total)d)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/execute.py:327
+#: src/polyx/gui/detector/pages/execute.py:324
 #, python-format
 msgid "Error: %(message)s"
 msgstr ""
@@ -2301,140 +2305,140 @@ msgstr ""
 msgid "Save labelled photos"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:235
+#: src/polyx/gui/detector/pages/report.py:236
 msgid "Folder to save the labelled photos in"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:282
+#: src/polyx/gui/detector/pages/report.py:283
 msgid "Report scope"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:285
+#: src/polyx/gui/detector/pages/report.py:286
 msgid ""
 "You can generate the report for the <b>whole job</b>, for <b>only the photos you choose</b>, or "
 "both at once. Figures, charts and the confusion matrix are recomputed over your choice, so the "
 "report always describes exactly the photos it shows."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:293
+#: src/polyx/gui/detector/pages/report.py:294
 msgid "Whole job (every analysed photo)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:294
+#: src/polyx/gui/detector/pages/report.py:295
 msgid "Only the photos I tick below"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:295
+#: src/polyx/gui/detector/pages/report.py:296
 msgid "Both: one complete report and one with the ticked photos"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:305
+#: src/polyx/gui/detector/pages/report.py:306
 msgid "Tick all"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:306
+#: src/polyx/gui/detector/pages/report.py:307
 msgid "Untick all"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:388
+#: src/polyx/gui/detector/pages/report.py:389
 msgid "Detection is still running; wait for it to finish before generating the report."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:390
+#: src/polyx/gui/detector/pages/report.py:391
 msgid ""
 "You have not run any detection yet.\n"
 "Go to the Run tab and start the analysis first."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:405
+#: src/polyx/gui/detector/pages/report.py:406
 msgid "What to include in the report"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:407
+#: src/polyx/gui/detector/pages/report.py:408
 msgid ""
 "The full report is long. Untick whatever you do not need: sections renumber themselves and the "
 "table of contents adjusts. A ticked section with no data — error analysis without ground truth, "
 "for instance — is left out anyway."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:446
+#: src/polyx/gui/detector/pages/report.py:447
 msgid "Per-image gallery  (this is what makes the file big)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:531
+#: src/polyx/gui/detector/pages/report.py:532
 msgid "Generating report… (this may take a few seconds)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:584
+#: src/polyx/gui/detector/pages/report.py:585
 msgid "Save report as PDF"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:584
+#: src/polyx/gui/detector/pages/report.py:585
 msgid "PDF (*.pdf)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:598
+#: src/polyx/gui/detector/pages/report.py:599
 msgid "Generating PDF… (rendering with the browser engine, a few seconds)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:204 src/polyx/gui/detector/pages/report.py:222
+#: src/polyx/gui/detector/pages/report.py:205 src/polyx/gui/detector/pages/report.py:223
 msgid "Nothing to save"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:205
+#: src/polyx/gui/detector/pages/report.py:206
 msgid "Tick at least one of the three options: manual labels, model detections, or both overlaid."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:213 src/polyx/gui/detector/pages/report.py:493
+#: src/polyx/gui/detector/pages/report.py:214 src/polyx/gui/detector/pages/report.py:494
 msgid "No photos ticked"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:214
+#: src/polyx/gui/detector/pages/report.py:215
 msgid "The scope is set to 'only the photos I tick' and none are ticked."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:223
+#: src/polyx/gui/detector/pages/report.py:224
 msgid ""
 "No annotated image was found on disk for what you asked for.\n"
 "\n"
 "If you ticked 'manual labels', remember that these only exist for photos that have ground truth."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:243
+#: src/polyx/gui/detector/pages/report.py:244
 #, python-format
 msgid "Saving %(count)d image…"
 msgid_plural "Saving %(count)d images…"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/report.py:418
+#: src/polyx/gui/detector/pages/report.py:419
 msgid "Full"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:419
+#: src/polyx/gui/detector/pages/report.py:420
 msgid "Short summary"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:420
+#: src/polyx/gui/detector/pages/report.py:421
 msgid "Methodological"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:494
+#: src/polyx/gui/detector/pages/report.py:495
 msgid ""
 "You chose a report of specific photos, but none are ticked.\n"
 "\n"
 "Tick at least one in the list, or change the scope to 'Whole job'."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:521
+#: src/polyx/gui/detector/pages/report.py:522
 msgid "Report destination folder"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:565
+#: src/polyx/gui/detector/pages/report.py:566
 msgid "PDF not available"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:566
+#: src/polyx/gui/detector/pages/report.py:567
 msgid ""
 "Exporting to PDF needs QtWebEngine (bundled with PySide6-Addons).\n"
 "\n"
@@ -2442,83 +2446,83 @@ msgid ""
 "Ctrl+P → 'Save as PDF'."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:259
+#: src/polyx/gui/detector/pages/report.py:260
 #, python-format
 msgid "%(count)d image in %(folders)d folder inside %(destination)s"
 msgid_plural "%(count)d images in %(folders)d folders inside %(destination)s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/report.py:275
+#: src/polyx/gui/detector/pages/report.py:276
 msgid "Some could not be saved"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:370
+#: src/polyx/gui/detector/pages/report.py:371
 #, python-format
 msgid "%(count)d photo in the job"
 msgid_plural "%(count)d photos in the job"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/report.py:374
+#: src/polyx/gui/detector/pages/report.py:375
 msgid "⚠ none ticked"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:502
+#: src/polyx/gui/detector/pages/report.py:503
 msgid "whole job"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:553
+#: src/polyx/gui/detector/pages/report.py:554
 msgid "Error generating report"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:554
+#: src/polyx/gui/detector/pages/report.py:555
 msgid "✗ Generation failed."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:635
+#: src/polyx/gui/detector/pages/report.py:636
 msgid "✗ Could not generate the whole PDF."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:638
+#: src/polyx/gui/detector/pages/report.py:639
 msgid "The PDF could not be generated"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:646
+#: src/polyx/gui/detector/pages/report.py:647
 msgid "Error generating PDF"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:647
+#: src/polyx/gui/detector/pages/report.py:648
 msgid "✗ PDF generation failed."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:265
+#: src/polyx/gui/detector/pages/report.py:266
 #, python-format
 msgid "%(count)d failed"
 msgid_plural "%(count)d failed"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/report.py:376
+#: src/polyx/gui/detector/pages/report.py:377
 #, python-format
 msgid "%(count)d of %(total)d ticked"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:508
+#: src/polyx/gui/detector/pages/report.py:509
 #, python-format
 msgid "%(count)d ticked photo"
 msgid_plural "%(count)d ticked photos"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/report.py:540
+#: src/polyx/gui/detector/pages/report.py:541
 #, python-format
 msgid "%(count)d report generated in %(folder)s"
 msgid_plural "%(count)d reports generated in %(folder)s"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/report.py:639
+#: src/polyx/gui/detector/pages/report.py:640
 #, python-format
 msgid ""
 "Failed to render: %(files)s.\n"
@@ -2527,7 +2531,7 @@ msgid ""
 "Ctrl+P → 'Save as PDF' in your browser."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/report.py:622
+#: src/polyx/gui/detector/pages/report.py:623
 #, python-format
 msgid "%(count)d PDF generated in %(folder)s"
 msgid_plural "%(count)d PDFs generated in %(folder)s"
@@ -2603,15 +2607,15 @@ msgid ""
 "model again."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:310
+#: src/polyx/gui/detector/pages/results.py:311
 msgid "Re-reading ground truth…"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:310 src/polyx/gui/labeler/window.py:478
+#: src/polyx/gui/detector/pages/results.py:311 src/polyx/gui/labeler/window.py:478
 msgid "Cancel"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:311 src/polyx/gui/detector/pages/results.py:332
+#: src/polyx/gui/detector/pages/results.py:312 src/polyx/gui/detector/pages/results.py:333
 msgid "Reload GT"
 msgstr ""
 
@@ -2623,12 +2627,12 @@ msgstr ""
 msgid "CSV (*.csv)"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:99 src/polyx/gui/detector/pages/results.py:239
+#: src/polyx/gui/detector/pages/results.py:99 src/polyx/gui/detector/pages/results.py:240
 #, python-format
 msgid "Precision (%(criterion)s):  —"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:100 src/polyx/gui/detector/pages/results.py:245
+#: src/polyx/gui/detector/pages/results.py:100 src/polyx/gui/detector/pages/results.py:246
 #, python-format
 msgid "Recall (%(criterion)s):  —"
 msgstr ""
@@ -2637,11 +2641,11 @@ msgstr ""
 msgid "Pred"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:306
+#: src/polyx/gui/detector/pages/results.py:307
 msgid "There are no results to recompute: run the detection first."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:343
+#: src/polyx/gui/detector/pages/results.py:344
 #, python-format
 msgid ""
 "✓ %(count)s image with different ground truth: %(items)s. Metrics and control images updated; "
@@ -2652,12 +2656,12 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/results.py:349
+#: src/polyx/gui/detector/pages/results.py:350
 #, python-format
 msgid "✓ Reviewed %(count)s images: no .txt changed since the run. There was nothing to recompute."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:357
+#: src/polyx/gui/detector/pages/results.py:358
 msgid "Cancelled halfway: press again to finish."
 msgstr ""
 
@@ -2692,22 +2696,22 @@ msgstr ""
 msgid "That image has no detections to review."
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:236
+#: src/polyx/gui/detector/pages/results.py:237
 #, python-format
 msgid "Precision (%(criterion)s):  %(value).3f"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:242
+#: src/polyx/gui/detector/pages/results.py:243
 #, python-format
 msgid "Recall (%(criterion)s):  %(value).3f"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:342
+#: src/polyx/gui/detector/pages/results.py:343
 #, python-format
 msgid " and %(count)s more"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/results.py:353
+#: src/polyx/gui/detector/pages/results.py:354
 #, python-format
 msgid "(%(count)s with no control .txt.)"
 msgstr ""
@@ -4453,10 +4457,6 @@ msgstr ""
 
 #: src/polyx/gui/trainer/window.py:101
 msgid "● Training…"
-msgstr ""
-
-#: src/polyx/gui/trainer/window.py:112
-msgid "● Error"
 msgstr ""
 
 #: src/polyx/gui/trainer/window.py:177

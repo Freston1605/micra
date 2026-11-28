@@ -128,7 +128,7 @@ def _drag(canvas, dx: float = 40.0, dy: float = 30.0) -> None:
 
 
 def _detection_result(image_path: Path, model_idx: int):
-    """One detected particle stored against a real model slot."""
+    """One detected particle stored against a dense model index."""
     from polyx.core.detect.protocol import Instance
     from polyx.core.detection_run import ImageResult
 
@@ -285,13 +285,14 @@ def test_preferences_applies_immediately_and_stops_promising_a_restart(qapp):
 
 def test_detector_retranslates_and_keeps_loaded_state(qapp, tmp_path):
     from polyx.core import i18n
+    from polyx.core.detection_run import RunResult
     from polyx.gui.detector.window import DetectorWindow
 
     i18n.set_language("es")
     window = DetectorWindow()
     image = tmp_path / "placa.png"
     model = tmp_path / "model.pt"
-    run = object()
+    run = RunResult(run_dir=tmp_path / "run")
     window.state.images = [image]
     window.state.model_slots[0].path = model
     window.state.model_slots[0].alias = "my-model"
@@ -831,9 +832,10 @@ def test_detector_keeps_the_loaded_slots_and_detection_set_across_a_switch(qapp,
     The Detector has no separate "selected slot" field: the selected slots
     are the ones that hold a path and a loaded backend, so both a non-default
     slot and its backend are exercised here. The detection set is the run's
-    per-slot results, which the rebuilt Results page must keep showing.
+    per-model results, which the rebuilt Results page must keep showing.
     """
     from polyx.core import i18n
+    from polyx.core.detection_run import ModelInfo, RunResult
     from polyx.gui.detector.window import DetectorWindow
 
     images = [_write_image(tmp_path / "a.png"), _write_image(tmp_path / "b.png")]
@@ -857,9 +859,14 @@ def test_detector_keeps_the_loaded_slots_and_detection_set_across_a_switch(qapp,
     state.model_slots[2].loaded = candidate_model
     detections = {
         0: [_detection_result(images[0], 0)],
-        2: [_detection_result(images[1], 2)],
+        1: [_detection_result(images[1], 1)],
     }
     state.results = detections
+    state.run_result = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="reference"), ModelInfo(alias="candidate")],
+        results=detections,
+    )
     window.stack.setCurrentIndex(5)
     window.sidebar_buttons[5].setChecked(True)
 
@@ -873,7 +880,7 @@ def test_detector_keeps_the_loaded_slots_and_detection_set_across_a_switch(qapp,
     assert state.model_slots[2].alias == "candidate"
     assert state.model_slots[2].loaded is candidate_model
     assert state.results is detections
-    assert state.results[2][0].predictions[0].class_name == "PET"
+    assert state.results[1][0].predictions[0].class_name == "PET"
     assert window.stack.currentIndex() == 5
     assert state.gt_image == images[1]
     manual = _manual_gt_page(window)

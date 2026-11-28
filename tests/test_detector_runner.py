@@ -4,7 +4,7 @@ The runner is now a thin Qt adapter over the canonical core engine. These tests
 pin the observable GUI contract -- signals, result bookkeeping, files on disk,
 abort and failure behaviour -- against a fake model. The engine's own
 semantics are covered by ``tests/test_detection_engine.py``; here the extra
-cases are the GUI-only seams: dense-to-slot index mapping and review verdicts
+cases are the GUI-only seams: dense result keys and review verdicts
 stored in ``DetectorState``.
 
 Nothing here touches ultralytics or the real ``runs/`` folder: the model is a
@@ -26,7 +26,7 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from polyx.core.detect.yolo import Detection  # noqa: E402
-from polyx.core.detection_run import RunResult  # noqa: E402
+from polyx.core.detection_run import ImageResult, ModelInfo, RunResult  # noqa: E402
 from polyx.core.measure.calibration import ORIGIN_MANUAL, Calibration  # noqa: E402
 from polyx.gui.detector.runner import DetectorRunner  # noqa: E402
 from polyx.gui.detector.state import DetectorState  # noqa: E402
@@ -97,6 +97,13 @@ class _FailingModel(_FakeModel):
         return super().predict_auto(path, **kw)
 
 
+class _UnloadableModel(_FakeModel):
+    """A model whose weights cannot be loaded, before any image is touched."""
+
+    def load(self):
+        raise RuntimeError("cannot load weights")
+
+
 def _state(tmp_path: Path, images: list[Path]) -> DetectorState:
     state = DetectorState()
     slot = state.model_slots[0]
@@ -137,8 +144,8 @@ def test_run_one_image_produces_result_files_and_progress(qapp, tmp_path):
     assert events["failed"] == [], "the run must not fail"
     assert events["ok"] == [True], "finished_ok must be emitted once"
 
-    # One result for the one active model, with both detections.
-    assert set(state.results) == {0, 1, 2}
+    # One result for the one active model, under the engine's dense key 0.
+    assert set(state.results) == {0}
     assert len(state.results[0]) == 1
     result = state.results[0][0]
     assert result.model_idx == 0
@@ -199,7 +206,7 @@ def test_the_detector_package_does_not_use_the_name_keyed_calibration_view():
 def test_a_completed_run_lists_each_result_once(qapp, tmp_path):
     """The streamed append is the single write path for results.
 
-    Every result is appended under its real slot as it arrives, and the final
+    Every result is appended under its dense index as it arrives, and the final
     publish adopts that same list instead of rebuilding the mapping: the pages
     that read ``state.results`` mid-run read the same objects afterwards, and
     no result is written twice.
@@ -297,6 +304,7 @@ def test_run_aborts_at_image_boundary(qapp, tmp_path):
     assert state.run_result is not None
     assert state.run_result.status == "aborted"
     assert state.run_dir == state.run_result.run_dir
+    assert state.model_at(0).alias == "model_a"
 
 
 def test_run_failed_emits_failed_and_keeps_partial_result(qapp, tmp_path):
@@ -318,10 +326,12 @@ def test_run_failed_emits_failed_and_keeps_partial_result(qapp, tmp_path):
     assert "simulated failure" in (state.run_result.error or "")
     assert state.run_dir == state.run_result.run_dir
     assert [result.image_path.name for result in state.results[0]] == ["a.png"]
+    assert state.model_at(0).alias == "model_a"
     assert (state.run_dir / "run.json").is_file()
 
 
-def test_dense_engine_indices_map_to_real_slots(qapp, tmp_path):
+def test_gapped_slots_follow_the_run_s_dense_model_order(qapp, tmp_path):
+    """Models in slots 0 and 2 produce dense result keys 0 and 1."""
     path = _plate(tmp_path / "photos" / "plate.png")
     state = DetectorState()
     state.model_slots[0].alias = "model_a"
@@ -340,18 +350,311 @@ def test_dense_engine_indices_map_to_real_slots(qapp, tmp_path):
 
     assert events["failed"] == []
     assert events["ok"] == [True]
-    # The engine numbers its active models 0..N-1; the GUI keeps its real
-    # model_slots indices, including the empty slot in between.
-    assert set(state.results) == {0, 1, 2}
+    # The GUI keeps the run's dense model order: one key per model that ran,
+    # with no empty slot in between and no real slot index in the key.
+    assert set(state.results) == {0, 1}
     assert len(state.results[0]) == 1
-    assert state.results[1] == []
-    assert len(state.results[2]) == 1
-    assert [index for index, _result in events["image"]] == [0, 2]
+    assert len(state.results[1]) == 1
+    assert [index for index, _result in events["image"]] == [0, 1]
+    assert [state.model_at(index).alias for index in sorted(state.results)] == [
+        "model_a",
+        "model_c",
+    ]
     assert state.run_result is not None
     assert set(state.run_result.results) == {0, 1}
     assert [model.alias for model in state.run_result.models] == ["model_a", "model_c"]
     assert (state.run_dir / "model_a" / "labels" / "0000_plate.txt").is_file()
     assert (state.run_dir / "model_c" / "labels" / "0000_plate.txt").is_file()
+
+
+def test_two_slots_with_the_same_alias_and_path_keep_separate_results(qapp, tmp_path):
+    """Two identical-looking slots are two models that ran, not one model twice."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = DetectorState()
+    for index in (0, 1):
+        slot = state.model_slots[index]
+        slot.alias = "same"
+        slot.alias_generated = False
+        slot.path = tmp_path / "same.pt"
+        slot.loaded = _FakeModel()
+    state.images = [path]
+    state.calibration.measure_plate = False
+    state.calibration.um_per_px = 2.0
+    state.params.tiling = "never"
+    runner = _runner_with_folder(state, tmp_path)
+
+    events = _execute(runner)
+
+    assert events["failed"] == []
+    assert set(state.results) == {0, 1}
+    assert [index for index, _result in events["image"]] == [0, 1]
+    first, second = state.results[0][0], state.results[1][0]
+    assert first is not second
+    assert (first.model_idx, second.model_idx) == (0, 1)
+    assert [len(result.predictions) for result in (first, second)] == [2, 2]
+    # The run resolver keeps the two folder aliases unique; the labels follow
+    # the run record rather than either slot.
+    assert [state.model_at(index).alias for index in (0, 1)] == ["same", "same_2"]
+
+
+def test_model_at_prefers_the_record_then_the_snapshot_then_the_slot(qapp, tmp_path):
+    """Label resolution is run record -> run snapshot -> current slot."""
+    state = DetectorState()
+    state.model_slots[0].alias = "slot"
+    state.model_snapshot = [ModelInfo(alias="snapshot")]
+    state.run_result = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="record")],
+    )
+
+    assert state.model_at(0).alias == "record"
+
+    state.run_result = None
+    assert state.model_at(0).alias == "snapshot"
+
+    state.model_snapshot = []
+    assert state.model_at(0).alias == "slot"
+
+    # A dense key with no slot still has a generated placeholder, so a partial
+    # page that outruns the tab cannot crash.
+    assert state.model_at(4).alias == "model_5"
+    assert state.model_at(4).alias_generated is True
+
+
+def test_model_at_reads_the_run_record_before_the_current_slot(qapp, tmp_path):
+    """A post-run Models-tab change does not relabel the run's results."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = DetectorState()
+    state.model_slots[0].alias = "model_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[0].loaded = _FakeModel()
+    state.model_slots[2].alias = "model_c"
+    state.model_slots[2].path = tmp_path / "c.pt"
+    state.model_slots[2].loaded = _FakeModel()
+    state.images = [path]
+    state.calibration.measure_plate = False
+    state.calibration.um_per_px = 2.0
+    state.params.tiling = "never"
+    _execute(_runner_with_folder(state, tmp_path))
+
+    # What the Models tab shows later is not the run's model list.
+    state.model_slots[0].alias = "renamed"
+    state.model_slots[2].alias = "also_renamed"
+
+    assert state.model_at(0).alias == "model_a"
+    assert state.model_at(1).alias == "model_c"
+
+    # A state built by hand (no run record and no snapshot) still has a label.
+    state.run_result = None
+    state.model_snapshot = []
+    assert state.model_at(0).alias == "renamed"
+    assert state.model_at(1).alias == "model_2"
+
+
+def test_verdicts_are_keyed_by_dense_model_index(qapp, tmp_path):
+    """Verdicts follow the same dense key as the results they describe."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = DetectorState()
+    state.model_slots[0].alias = "model_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[0].loaded = _FakeModel()
+    state.model_slots[2].alias = "model_c"
+    state.model_slots[2].path = tmp_path / "c.pt"
+    state.model_slots[2].loaded = _FakeModel()
+    state.images = [path]
+    state.calibration.measure_plate = False
+    state.calibration.um_per_px = 2.0
+    state.params.tiling = "never"
+    _execute(_runner_with_folder(state, tmp_path))
+
+    state.set_verdict(1, path, "buena")
+
+    assert state.verdicts == {(1, path): "buena"}
+    assert state.verdict_for(1, path) == "buena"
+    assert state.verdict_for(0, path) is None
+
+
+def test_a_run_snapshots_its_active_models_in_dense_order(qapp, tmp_path):
+    """A run freezes its models as a copy, not as references to the slots."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = DetectorState()
+    state.model_slots[0].alias = "model_a"
+    state.model_slots[0].alias_generated = False
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[0].names = {0: "PET"}
+    state.model_slots[0].sha256 = "a" * 64
+    state.model_slots[0].loaded = _FakeModel()
+    state.model_slots[2].alias = "model_c"
+    state.model_slots[2].alias_generated = False
+    state.model_slots[2].path = tmp_path / "c.pt"
+    state.model_slots[2].loaded = _FakeModel()
+    state.images = [path]
+    state.calibration.measure_plate = False
+    state.calibration.um_per_px = 2.0
+    state.params.tiling = "never"
+
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == []
+    snapshot = state.model_snapshot
+    assert [model.alias for model in snapshot] == ["model_a", "model_c"]
+    assert [model.path for model in snapshot] == [tmp_path / "a.pt", tmp_path / "c.pt"]
+    assert [model.alias_generated for model in snapshot] == [False, False]
+    assert [model.model_type for model in snapshot] == ["yolo", "yolo"]
+    assert [model.sha256 for model in snapshot] == ["a" * 64, ""]
+    assert snapshot[0].names == {0: "PET"}
+
+    # A value copy: a later Models-tab edit cannot reach the snapshot.
+    assert all(model is not slot for model in snapshot for slot in state.model_slots)
+    state.model_slots[0].alias = "renamed"
+    state.model_slots[0].names[0] = "PP"
+    assert snapshot[0].alias == "model_a"
+    assert snapshot[0].names == {0: "PET"}
+
+
+def test_a_refused_attempt_keeps_the_previous_run(qapp, tmp_path):
+    """A request that cannot start is not a run: the old batch stays intact."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    _execute(_runner_with_folder(state, tmp_path))
+    state.set_verdict(0, path, "buena")
+    previous_result = state.run_result
+    previous_results = state.results
+    previous_snapshot = state.model_snapshot
+    previous_run_dir = state.run_dir
+    assert previous_result is not None
+
+    state.model_slots[0].path = None  # nothing active
+    events = _execute(DetectorRunner(state, runs_root=tmp_path / "runs_second"))
+
+    assert events["failed"] == ["No hay modelos cargados."]
+    assert state.results == previous_results
+    assert state.run_result is previous_result
+    assert state.model_snapshot == previous_snapshot
+    assert state.verdicts == {(0, path): "buena"}
+    assert state.run_dir == previous_run_dir
+    assert not (tmp_path / "runs_second").exists()
+
+
+def test_an_attempt_with_no_images_keeps_the_previous_run(qapp, tmp_path):
+    """The no-images refusal is decided before the attempt owns the pages."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    _execute(_runner_with_folder(state, tmp_path))
+    state.set_verdict(0, path, "buena")
+    previous_result = state.run_result
+    previous_results = state.results
+    previous_run_dir = state.run_dir
+
+    state.images = []
+    events = _execute(DetectorRunner(state, runs_root=tmp_path / "runs_second"))
+
+    assert events["failed"] == ["No hay imágenes seleccionadas."]
+    assert state.results == previous_results
+    assert state.run_result is previous_result
+    assert state.verdicts == {(0, path): "buena"}
+    assert state.run_dir == previous_run_dir
+    assert not (tmp_path / "runs_second").exists()
+
+
+def test_a_model_load_failure_clears_the_previous_run_and_keeps_the_snapshot(qapp, tmp_path):
+    """The load happens after the attempt took ownership of the result pages."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    _execute(_runner_with_folder(state, tmp_path))
+    state.set_verdict(0, path, "buena")
+
+    state.model_slots[0].loaded = _UnloadableModel()
+    events = _execute(DetectorRunner(state, runs_root=tmp_path / "runs_second"))
+
+    assert events["failed"] == ["RuntimeError: cannot load weights"]
+    assert state.results == {}
+    assert state.run_result is None
+    assert state.verdicts == {}
+    assert [model.alias for model in state.model_snapshot] == ["model_a"]
+
+
+def test_a_completed_run_labels_from_the_record_before_the_snapshot(qapp, tmp_path):
+    """The published record resolves duplicate aliases; the snapshot keeps the raw ones."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = DetectorState()
+    for index in (0, 1):
+        slot = state.model_slots[index]
+        slot.alias = "same"
+        slot.alias_generated = False
+        slot.path = tmp_path / "same.pt"
+        slot.loaded = _FakeModel()
+    state.images = [path]
+    state.calibration.measure_plate = False
+    state.calibration.um_per_px = 2.0
+    state.params.tiling = "never"
+
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == []
+    assert [model.alias for model in state.model_snapshot] == ["same", "same"]
+    assert [state.model_at(index).alias for index in (0, 1)] == ["same", "same_2"]
+
+
+def test_an_aborted_partial_run_keeps_its_labels_after_the_models_tab_changes(qapp, tmp_path):
+    """An aborted run publishes a record; the labels come from it, not the slots."""
+    paths = [
+        _plate(tmp_path / "photos" / "a.png"),
+        _plate(tmp_path / "photos" / "b.png"),
+    ]
+    state = _state(tmp_path, paths)
+    runner = _runner_with_folder(state, tmp_path)
+    runner.image_done.connect(lambda _index, _result: state.request_abort())
+
+    events = _execute(runner)
+
+    assert events["aborted"] == [True]
+    assert [result.image_path.name for result in state.results[0]] == ["a.png"]
+    state.model_slots[0].alias = "renamed"
+    assert state.model_at(0).alias == "model_a"
+
+
+def test_a_failed_partial_run_keeps_its_labels_after_the_models_tab_changes(qapp, tmp_path):
+    """A failed run that published a record labels its received results from it."""
+    paths = [
+        _plate(tmp_path / "photos" / "a.png"),
+        _plate(tmp_path / "photos" / "b.png"),
+    ]
+    state = _state(tmp_path, paths)
+    state.model_slots[0].loaded = _FailingModel("b.png")
+
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == ["RuntimeError: simulated failure"]
+    assert [result.image_path.name for result in state.results[0]] == ["a.png"]
+    state.model_slots[0].alias = "renamed"
+    assert state.model_at(0).alias == "model_a"
+
+
+def test_a_streamed_result_with_no_published_record_labels_from_the_snapshot(
+    qapp, tmp_path, monkeypatch
+):
+    """A generic failure after streaming keeps the results and the run-start labels."""
+    from polyx.gui.detector import runner as runner_module
+
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    streamed = ImageResult(image_path=path, model_idx=0)
+
+    def _explode(config, on_progress=None, on_result=None, should_abort=None):
+        on_result(streamed)
+        raise RuntimeError("stream lost")
+
+    monkeypatch.setattr(runner_module, "run_detection", _explode)
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == ["RuntimeError: stream lost"]
+    assert state.run_result is None, "the engine never published a record"
+    assert state.results[0] == [streamed]
+    assert [model.alias for model in state.model_snapshot] == ["model_a"]
+
+    state.model_slots[0].alias = "renamed"
+    assert state.model_at(0).alias == "model_a"
 
 
 def test_generated_alias_names_the_folder_and_is_persisted(qapp, tmp_path):
@@ -441,6 +744,39 @@ def test_review_dialog_reads_and_writes_state_verdicts(qapp, tmp_path):
     assert state.verdicts[(0, path)] == "mala"
     assert "✗" in dialog.list.item(0).text()
     dialog.close()
+
+
+def test_review_dialog_lists_the_run_s_models_in_dense_order(qapp, tmp_path):
+    """The selector offers the models that ran, named by the run record."""
+    from polyx.gui.detector.review_dialog import ReviewDialog
+
+    first = _plate(tmp_path / "photos" / "a.png")
+    second = _plate(tmp_path / "photos" / "b.png")
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[1].alias = "slot_b"
+    run = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a"), ModelInfo(alias="run_c")],
+        results={
+            0: [ImageResult(image_path=first, model_idx=0)],
+            1: [ImageResult(image_path=second, model_idx=1)],
+        },
+    )
+    state.run_result = run
+    state.results = run.results
+
+    dialog = ReviewDialog(state)
+    try:
+        assert [
+            dialog.combo_model.itemText(index) for index in range(dialog.combo_model.count())
+        ] == ["run_a", "run_c"]
+        dialog.combo_model.setCurrentIndex(1)
+        assert [dialog.list.item(row).text() for row in range(dialog.list.count())] == ["b.png"]
+        dialog._set_verdict("mala")
+        assert state.verdicts[(1, second)] == "mala"
+    finally:
+        dialog.close()
 
 
 def test_jsonl_events_use_english_data_keys(qapp, tmp_path):

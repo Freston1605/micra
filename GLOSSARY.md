@@ -247,6 +247,17 @@ aggregate metrics, status (`completed` / `aborted` / `failed`), error,
 skipped images and timestamps. Reports, the CLI and `load_run` consume it;
 the GUI adds signals and review verdicts on top but does not extend it.
 
+## Dense model index
+
+The engine's zero-based key for the models that actually ran (`0..N-1`), and
+the same key used by `RunResult.results`, `DetectorState.results`, review
+verdicts and the Run-page previews. The real `model_slots` index is a pre-run
+loading detail and never appears in result keys. The run-start model snapshot
+is a value copy of the active models in dense order taken when a run starts;
+`DetectorState.model_at()` resolves a label from the published
+`RunResult.models`, else that snapshot, else the current slot at the index.
+_Avoid_: slot index as a result key
+
 ## Operating point
 
 The confidence threshold a run is scored at, together with the criterion used

@@ -1066,17 +1066,24 @@ state.images: List[Path]                # Images to analyse
 state.params: RunParams                 # conf, IoU, imgsz, filters (core shape)
 state.calibration: CalibrationPolicy    # per-photo scale policy (one owner)
 state.run_result: RunResult | None      # Current canonical run record
-state.results: Dict[int, List[ImageResult]]  # Per real model slot
+state.model_snapshot: List[ModelInfo]   # Run-start copy of the active models
+state.results: Dict[int, List[ImageResult]]  # Dense active-model index
 state.verdicts: Dict[Tuple[int, Path], str]  # Review verdicts (GUI only)
 ```
-The engine numbers active models densely (`0..N-1`); `DetectorRunner` maps those
-indices onto the real `model_slots` before filling `results` or emitting
-`image_done`.
+The engine numbers active models densely (`0..N-1`) and the GUI keeps that same
+key: `DetectorRunner` files each `ImageResult` under `result.model_idx` and
+emits the dense index with `image_done`, which the Run page uses directly as its
+preview index. Pages resolve a result's label through `DetectorState.model_at()`
+(the published `RunResult.models`, else the run-start `model_snapshot`, else the
+current slot at that index), so models in non-adjacent or duplicate-looking
+slots stay distinct and a later Models-tab change does not relabel a finished
+run. The snapshot is a value copy taken when the run starts, so a partial run
+that streamed results and never published a record still labels them.
 
 ### `ImageResult` (src/polyx/core/detection_run/result.py)
 Result of one image, Qt-free. The GUI re-exports it unchanged. The review
 verdict is not part of this shape: it lives in `DetectorState.verdicts`, keyed
-by real model slot and image path.
+by dense model index and image path.
 ```python
 image_path: Path
 predictions: List[Detection]
@@ -1177,7 +1184,7 @@ run_detection()  (core, Qt-free: decode, calibrate, GT, predict,
                   measure, match, draw, persist)
     ↓
 RunResult  (dense active-model indices, partial on abort/failure)
-    ├→ DetectorRunner: map indices onto model_slots → Qt signals
+    ├→ DetectorRunner: dense keys → Qt signals → pages
     ├→ generate_report(RunResult) (GUI report page and polyx-detect --full-report)
     ├→ polyx-report: load_run (canonical); pre-canonical folders are refused
     └→ <user data dir>/runs/detect_YYYYMMDD_HHMMSS/

@@ -166,11 +166,12 @@ class ReportPage(DetectorPage):
         solo_marked = self.rb_chosen.isChecked()
         # The alias only gets in the way when there is a single model: without it, the file
         # is named the same as the original photo, which is convenient for a figure.
+        # ``results`` is dense-keyed, so its length is the number of models that ran.
         several = len(self.state.results) > 1
 
         tasks, seen = [], set()
         for mi, results_2 in self.state.results.items():
-            alias = self.state.model_slots[mi].alias
+            alias = self.state.model_at(mi).alias
             brand = f"__{alias}" if several else ""
             for r in results_2:
                 if solo_marked and Path(r.image_path) not in marked:
