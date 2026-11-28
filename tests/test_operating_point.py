@@ -160,6 +160,53 @@ def test_the_same_run_counters_give_both_criteria_without_rematching(tmp_path):
     assert localisation.miscls == with_class.miscls == 1
 
 
+def _assert_same_score(left: Score, right: Score) -> None:
+    """Both paths described the same decision: counters and figures agree."""
+    assert (left.tp, left.fp, left.fn, left.miscls) == (
+        right.tp,
+        right.fp,
+        right.fn,
+        right.miscls,
+    )
+    assert (left.precision, left.recall, left.f1) == pytest.approx(
+        (right.precision, right.recall, right.f1)
+    )
+
+
+def test_hypothetical_threshold_agrees_with_the_recorded_decision(tmp_path):
+    """#224: both scoring paths report the same corrected figures.
+
+    ``score`` re-matches at a hypothetical confidence; ``Score.from_decision``
+    reads the match the run recorded. At the run's threshold both see the same
+    boxes, so they must agree -- including the corrected credit localisation
+    gives a well-placed wrong-class pair.
+    """
+    result = misclassified_result(tmp_path / "plate.png")
+
+    localisation = score([result], Criterion.LOCALISATION, 0.25)
+    _assert_same_score(
+        localisation,
+        Score.from_decision([result], Criterion.LOCALISATION, 0.25),
+    )
+    # One correct pair and one well-placed wrong-class pair: both were found.
+    assert (localisation.tp, localisation.fp, localisation.fn, localisation.miscls) == (
+        2,
+        0,
+        0,
+        1,
+    )
+    assert localisation.f1 == pytest.approx(1.0)
+
+    with_class = score([result], Criterion.WITH_CLASS, 0.25)
+    _assert_same_score(
+        with_class,
+        Score.from_decision([result], Criterion.WITH_CLASS, 0.25),
+    )
+    # The stricter question still counts the wrong polymer: one of two is right.
+    assert (with_class.tp, with_class.fp, with_class.fn, with_class.miscls) == (1, 1, 1, 1)
+    assert with_class.f1 == pytest.approx(0.5)
+
+
 def test_prf1_is_the_one_arithmetic_helper():
     assert prf1(2, 1, 1) == pytest.approx((2 / 3, 2 / 3, 2 / 3))
     assert prf1(0, 0, 0) == (0.0, 0.0, 0.0)
