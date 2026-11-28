@@ -94,17 +94,40 @@ class ErrorsPage(DetectorPage):
         self.body.addWidget(c2)
 
         # Connect
-        self.state.run_finished.connect(self.refresh)
+        self.state.run_finished.connect(self._refresh_model_combo)
+        self.state.run_aborted.connect(self._refresh_model_combo)
         self.state.models_changed.connect(self._refresh_model_combo)
+        self._refresh_model_combo()
 
     def _refresh_model_combo(self):
+        """Offer the models whose errors the page can show.
+
+        Once a run has started, its dense result keys are the authority: the
+        filter lists the run's models in run order, so a Models-tab change
+        afterwards cannot invent an entry for a model that did not run. Before
+        a run there are no result keys and the loaded slots are all that exist.
+        """
+        state = self.state
+        previous = self.combo_model.currentData()
         self.combo_model.blockSignals(True)
         self.combo_model.clear()
         self.combo_model.addItem(_("All"), -1)
-        for i, slot in enumerate(self.state.model_slots):
-            if slot.path is not None:
-                self.combo_model.addItem(display_name(slot.alias, slot.alias_generated, i), i)
+        if state.results:
+            for dense_idx in sorted(state.results):
+                model = state.model_at(dense_idx)
+                self.combo_model.addItem(
+                    display_name(model.alias, model.alias_generated, dense_idx), dense_idx
+                )
+        else:
+            for slot_idx, slot in enumerate(state.model_slots):
+                if slot.path is not None:
+                    self.combo_model.addItem(
+                        display_name(slot.alias, slot.alias_generated, slot_idx), slot_idx
+                    )
+        restored = self.combo_model.findData(previous) if previous is not None else -1
+        self.combo_model.setCurrentIndex(max(restored, 0))
         self.combo_model.blockSignals(False)
+        self.refresh()
 
     def refresh(self):
         state = self.state

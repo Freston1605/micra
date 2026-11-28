@@ -104,6 +104,185 @@ def test_errors_page_labels_rows_from_the_run_not_the_current_slots(
     ]
 
 
+def test_errors_model_filter_lists_the_run_models_in_dense_order(qapp, tmp_path, selected_language):
+    """A run from slots 0 and 2 offers its two models, not the slot placeholders."""
+    selected_language("en")
+    first = tmp_path / "photos" / "a.png"
+    second = tmp_path / "photos" / "b.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "model_1"
+    state.model_slots[0].alias_generated = True
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[2].alias = "model_3"
+    state.model_slots[2].alias_generated = True
+    state.model_slots[2].path = tmp_path / "b.pt"
+    page = ErrorsPage(state)
+
+    run = RunResult(
+        run_dir=tmp_path / "run",
+        models=[
+            ModelInfo(alias="model_1", alias_generated=True),
+            ModelInfo(alias="model_3", alias_generated=True),
+        ],
+        results={
+            0: [matched_result(first, model_idx=0)],
+            1: [matched_result(second, model_idx=1)],
+        },
+    )
+    state.run_result = run
+    state.results = run.results
+    state.run_finished.emit()
+
+    assert [page.combo_model.itemText(i) for i in range(page.combo_model.count())] == [
+        "All",
+        "Model 1",
+        "Model 3",
+    ]
+    assert [page.combo_model.itemData(i) for i in range(page.combo_model.count())] == [-1, 0, 1]
+
+    page.combo_model.setCurrentIndex(2)
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 0).text() == "Model 3"
+    assert page.table.item(0, 1).text() == "b.png"
+
+
+def test_errors_model_filter_lists_the_active_models_before_a_run(
+    qapp, tmp_path, selected_language
+):
+    """Before a run the filter offers the models loaded on the Models tab."""
+    selected_language("en")
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].alias_generated = False
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[2].alias = "slot_c"
+    state.model_slots[2].alias_generated = False
+    state.model_slots[2].path = tmp_path / "c.pt"
+    page = ErrorsPage(state)
+
+    assert [page.combo_model.itemText(i) for i in range(page.combo_model.count())] == [
+        "All",
+        "slot_a",
+        "slot_c",
+    ]
+
+
+def test_errors_model_filter_keeps_the_run_models_after_a_models_change(
+    qapp, tmp_path, selected_language
+):
+    """A post-run rename cannot relabel the filter or the rows of the run."""
+    selected_language("en")
+    first = tmp_path / "a.png"
+    second = tmp_path / "b.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[1].alias = "slot_b"
+    state.model_slots[1].path = tmp_path / "b.pt"
+    run = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a"), ModelInfo(alias="run_b")],
+        results={
+            0: [matched_result(first, model_idx=0)],
+            1: [matched_result(second, model_idx=1)],
+        },
+    )
+    state.run_result = run
+    state.results = run.results
+    page = ErrorsPage(state)
+    page.combo_model.setCurrentIndex(2)
+
+    state.model_slots[0].alias = "renamed_a"
+    state.model_slots[1].alias = "renamed_b"
+    state.model_slots[2].alias = "late_model"
+    state.model_slots[2].alias_generated = False
+    state.model_slots[2].path = tmp_path / "late.pt"
+    state.models_changed.emit()
+
+    assert [page.combo_model.itemText(i) for i in range(page.combo_model.count())] == [
+        "All",
+        "run_a",
+        "run_b",
+    ]
+    assert [page.combo_model.itemData(i) for i in range(page.combo_model.count())] == [-1, 0, 1]
+    assert page.combo_model.currentData() == 1
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 0).text() == "run_b"
+
+
+def test_errors_model_filter_falls_back_to_all_when_the_selected_model_did_not_run(
+    qapp, tmp_path, selected_language
+):
+    """A selection the next run no longer has reads as the unfiltered list."""
+    selected_language("en")
+    first = tmp_path / "a.png"
+    second = tmp_path / "b.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[1].alias = "slot_b"
+    state.model_slots[1].path = tmp_path / "b.pt"
+    state.run_result = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="run_a"), ModelInfo(alias="run_b")],
+        results={
+            0: [matched_result(first, model_idx=0)],
+            1: [matched_result(second, model_idx=1)],
+        },
+    )
+    state.results = state.run_result.results
+    page = ErrorsPage(state)
+    page.combo_model.setCurrentIndex(2)
+
+    solo = RunResult(
+        run_dir=tmp_path / "run2",
+        models=[ModelInfo(alias="solo")],
+        results={0: [matched_result(first, model_idx=0)]},
+    )
+    state.run_result = solo
+    state.results = solo.results
+    state.run_finished.emit()
+
+    assert [page.combo_model.itemText(i) for i in range(page.combo_model.count())] == [
+        "All",
+        "solo",
+    ]
+    assert page.combo_model.currentData() == -1
+    assert page.table.rowCount() == 1
+    assert page.table.item(0, 0).text() == "solo"
+
+
+def test_errors_model_filter_rebuilds_when_a_run_aborts(qapp, tmp_path, selected_language):
+    """An aborted run keeps offering the models it started with."""
+    selected_language("en")
+    first = tmp_path / "a.png"
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[2].alias = "slot_c"
+    state.model_slots[2].path = tmp_path / "c.pt"
+    page = ErrorsPage(state)
+
+    state.run_result = RunResult(
+        run_dir=tmp_path / "run",
+        models=[
+            ModelInfo(alias="model_1", alias_generated=True),
+            ModelInfo(alias="model_3", alias_generated=True),
+        ],
+        results={0: [matched_result(first, model_idx=0)], 1: []},
+    )
+    state.results = state.run_result.results
+    state.run_aborted.emit()
+
+    assert [page.combo_model.itemText(i) for i in range(page.combo_model.count())] == [
+        "All",
+        "Model 1",
+        "Model 3",
+    ]
+    page.combo_model.setCurrentIndex(2)
+    assert page.table.rowCount() == 0
+
+
 def test_errors_page_says_when_counts_have_no_match_identity(qapp, tmp_path, selected_language):
     """A folder that kept the counts but not the pairs must not read as clean."""
     from tests.match_fixtures import matched_run, saved_run
