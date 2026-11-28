@@ -68,12 +68,12 @@ class ComparePage(DetectorPage):
 
     def refresh(self):
         state = self.state
-        active_indices = [i for i, s in enumerate(state.model_slots) if s.path is not None]
+        dense_indices = sorted(state.results)
 
         # Summary
-        self.tbl_summary.setRowCount(len(active_indices))
-        for r, mi in enumerate(active_indices):
-            slot = state.model_slots[mi]
+        self.tbl_summary.setRowCount(len(dense_indices))
+        for r, mi in enumerate(dense_indices):
+            model = state.model_at(mi)
             rs = state.results.get(mi, [])
             n_img = len({x.image_path for x in rs})
             n_det = sum(len(x.predictions) for x in rs)
@@ -81,7 +81,7 @@ class ComparePage(DetectorPage):
             measured = Score.from_decision(rs, SCORE_CRITERION, state.params.conf)
             cm = sum(confs) / len(confs) if confs else 0
             self.tbl_summary.setItem(
-                r, 0, QTableWidgetItem(display_name(slot.alias, slot.alias_generated, mi))
+                r, 0, QTableWidgetItem(display_name(model.alias, model.alias_generated, mi))
             )
             for col, v in enumerate(
                 [
@@ -99,17 +99,21 @@ class ComparePage(DetectorPage):
                 it.setTextAlignment(Qt.AlignCenter)
                 self.tbl_summary.setItem(r, col, it)
 
-        # Per image: one column per model
-        if not active_indices:
+        # Per image: one column per dense model.
+        if not dense_indices:
             self.tbl_per_image.setColumnCount(1)
             self.tbl_per_image.setRowCount(0)
             return
         image_set = sorted(
-            {x.image_path for mi in active_indices for x in state.results.get(mi, [])}
+            {x.image_path for mi in dense_indices for x in state.results.get(mi, [])}
         )
         cols = [_("Image")] + [
-            display_name(state.model_slots[mi].alias, state.model_slots[mi].alias_generated, mi)
-            for mi in active_indices
+            display_name(
+                state.model_at(mi).alias,
+                state.model_at(mi).alias_generated,
+                mi,
+            )
+            for mi in dense_indices
         ]
         self.tbl_per_image.setColumnCount(len(cols))
         self.tbl_per_image.setHorizontalHeaderLabels(cols)
@@ -117,12 +121,12 @@ class ComparePage(DetectorPage):
 
         # Index results by (model_idx, image_path) -> number of predictions
         idx_map = {}
-        for mi in active_indices:
+        for mi in dense_indices:
             for r in state.results.get(mi, []):
                 idx_map[(mi, r.image_path)] = len(r.predictions)
         for r, p in enumerate(image_set):
             self.tbl_per_image.setItem(r, 0, QTableWidgetItem(p.name))
-            for c, mi in enumerate(active_indices, start=1):
+            for c, mi in enumerate(dense_indices, start=1):
                 it = QTableWidgetItem(str(idx_map.get((mi, p), 0)))
                 it.setTextAlignment(Qt.AlignCenter)
                 self.tbl_per_image.setItem(r, c, it)

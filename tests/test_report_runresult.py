@@ -222,6 +222,65 @@ def test_report_page_refuses_when_there_is_no_run(qapp, monkeypatch):
     assert page._check_results() is False
 
 
+def _labelled_run(tmp_path: Path, aliases: list[str]) -> RunResult:
+    """A run whose model folders hold the prediction copies the page exports."""
+    image = tmp_path / "photos" / "plate1.png"
+    image.parent.mkdir(parents=True, exist_ok=True)
+    image.write_bytes(b"not-read-by-the-photo-export")
+    results: dict[int, list[ImageResult]] = {}
+    models: list[ModelInfo] = []
+    for index, alias in enumerate(aliases):
+        pred = tmp_path / "run" / alias / "0000_plate1_pred.png"
+        pred.parent.mkdir(parents=True, exist_ok=True)
+        pred.write_bytes(b"prediction")
+        models.append(ModelInfo(alias=alias, path=tmp_path / f"{alias}.pt"))
+        results[index] = [
+            ImageResult(image_path=image, model_idx=index, pred_path=pred),
+        ]
+    return RunResult(
+        run_dir=tmp_path / "run",
+        images=[image],
+        models=models,
+        results=results,
+    )
+
+
+def test_one_model_labelled_photos_have_no_alias_suffix(qapp, tmp_path):
+    """A one-model run names the export like the source photo."""
+    pytest.importorskip("PySide6")
+    from polyx.gui.detector.pages import report as report_page
+    from polyx.gui.detector.state import DetectorState
+
+    run = _labelled_run(tmp_path, ["best"])
+    state = DetectorState()
+    state.run_result = run
+    state.results = run.results
+    page = report_page.ReportPage(state)
+
+    names = [name for _origin, _folder, name in page._photos_to_export()]
+
+    assert names == ["plate1.png"]
+
+
+def test_two_model_labelled_photos_keep_the_run_alias_suffix(qapp, tmp_path):
+    """Two models stay apart by the run's alias, even after the Models tab moves."""
+    pytest.importorskip("PySide6")
+    from polyx.gui.detector.pages import report as report_page
+    from polyx.gui.detector.state import DetectorState
+
+    run = _labelled_run(tmp_path, ["first", "second"])
+    state = DetectorState()
+    state.model_slots[0].alias = "slot_a"
+    state.model_slots[1].alias = "slot_b"
+    state.run_result = run
+    state.results = run.results
+    page = report_page.ReportPage(state)
+
+    names = [name for _origin, _folder, name in page._photos_to_export()]
+
+    assert names == ["plate1__first.png", "plate1__second.png"]
+
+
 def test_the_transitional_adapter_and_the_legacy_loader_are_gone():
     """New runs never rebuild GUI state; pre-canonical folders are not read."""
     import polyx.core as core

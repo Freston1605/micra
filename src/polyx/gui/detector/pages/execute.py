@@ -290,15 +290,12 @@ class RunPage(DetectorPage):
         )
 
     def _on_image_done(self, model_idx: int, res):
-        active = self.state.active_models()
-        # determine which preview it corresponds to
-        try:
-            slot = next(s for s in active if self.state.model_slots.index(s) == model_idx)
-            pi = active.index(slot)
-        except Exception:  # noqa: BLE001
-            return
-        if pi < len(self.previews):
-            self.previews[pi].set_image_bytes(res.annotated_png, name=Path(res.image_path).name)
+        # The previews are built in the run's active order, so the runner's
+        # dense model index is the preview index directly.
+        if 0 <= model_idx < len(self.previews):
+            self.previews[model_idx].set_image_bytes(
+                res.annotated_png, name=Path(res.image_path).name
+            )
         self.state.run_image_done.emit(model_idx, res)
 
     def _on_finished_ok(self):
