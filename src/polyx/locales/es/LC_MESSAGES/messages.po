@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Poly-X\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-27 22:36-0300\n"
+"POT-Creation-Date: 2026-11-27 23:17-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -1366,7 +1366,7 @@ msgid_plural "✓ Saved: %(path)s  (%(count)d boxes)"
 msgstr[0] "✓ Guardado: %(path)s  (%(count)d caja)"
 msgstr[1] "✓ Guardado: %(path)s  (%(count)d cajas)"
 
-#: src/polyx/gui/detector/review_dialog.py:335 src/polyx/gui/trainer/pages/dataset.py:109
+#: src/polyx/gui/detector/review_dialog.py:335 src/polyx/gui/trainer/pages/dataset.py:69
 #: src/polyx/gui/trainer/window.py:28 src/polyx/pipeline/coco_import.py:353
 msgid "Dataset"
 msgstr "Dataset"
