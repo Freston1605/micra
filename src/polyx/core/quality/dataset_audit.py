@@ -45,6 +45,11 @@ def _finding_code(code: str) -> str:
     return _FINDING_CODES[code]
 
 
+#: How many file names one finding names. The count is complete; the list is a
+#: readable sample so a saved artifact does not carry a folder.
+FINDING_SAMPLE_LIMIT = 10
+
+
 @dataclass
 class Finding:
     level: str  # ok | warn | error
@@ -97,16 +102,29 @@ def _scan_split(images: list[Path]) -> dict:
     count is returned so the audit can report it instead of dropping it.
     """
 
+    #: Labels the codec found somewhere the pinned loader does not read. The
+    #: shipped GUI/CLI trainer hands the YAML to Ultralytics, which resolves a
+    #: label only at ``images/`` -> ``labels/`` (or beside a plain-folder image);
+    #: every other codec location would train that image as background.
+    mismatched: list[tuple[str, str]] = []
+
     def records() -> Iterable[tuple[Path, Sequence[BBox] | None, int]]:
+        from ultralytics.data.utils import img2label_paths
+
         for img in images:
             label = find_label_file(img)
+            native = Path(img2label_paths([str(img)])[0])
+            if label != native and (label is not None or native.is_file()):
+                mismatched.append((img.name, str(native)))
             if label is None:
                 yield img, None, 0
             else:
                 boxes, malformed = read_boxes(label)
                 yield img, boxes, malformed
 
-    return _scan_box_records(records())
+    scan = _scan_box_records(records())
+    scan["label_location_mismatch"] = mismatched
+    return scan
 
 
 def _scan_box_records(records: Iterable[tuple[Path, Sequence[BBox] | None, int]]) -> dict:
@@ -116,11 +134,16 @@ def _scan_box_records(records: Iterable[tuple[Path, Sequence[BBox] | None, int]]
         lambda: defaultdict(int)
     )  # class -> {img: n}
     degenerate = out_range = duplicates = empty = no_label = malformed = 0
+    #: A bounded sample of the images that carry no label file at all, so the
+    #: refusal can name files a chemist can open instead of only a count.
+    unlabelled: list[str] = []
     n_imgs = 0
     for img, boxes, malformed_lines in records:
         n_imgs += 1
         if boxes is None:
             no_label += 1
+            if len(unlabelled) < FINDING_SAMPLE_LIMIT:
+                unlabelled.append(img.name)
             continue
         malformed += malformed_lines
         seen = set()
@@ -148,6 +171,8 @@ def _scan_box_records(records: Iterable[tuple[Path, Sequence[BBox] | None, int]]
         duplicates=duplicates,
         empty=empty,
         no_label=no_label,
+        no_label_images=unlabelled,
+        label_location_mismatch=[],
         malformed=malformed,
         n_imgs=n_imgs,
     )
@@ -229,6 +254,7 @@ class _Auditor:
         self._check_dominance()
         self._check_size_similarity()
         self._check_mechanical()
+        self._check_label_files()
         self._check_polygons()
         self._check_val_size()
         self._finalize()
@@ -491,18 +517,6 @@ class _Auditor:
                     code="duplicate_boxes",
                     parameters={"split": split, "count": sc["duplicates"]},
                 )
-            if sc["no_label"]:
-                audit.add(
-                    LEVEL_WARN,
-                    _("Images with no label in %(split)s: %(count)d")
-                    % {"split": split, "count": sc["no_label"]},
-                    _(
-                        "They will be trained as background (no objects). Confirm this is "
-                        "intentional."
-                    ),
-                    code="images_without_labels",
-                    parameters={"split": split, "count": sc["no_label"]},
-                )
         malformed = sum(scan["malformed"] for scan in self.scans.values())
         if malformed:
             audit.add(
@@ -515,6 +529,62 @@ class _Auditor:
                 code="non_box_label_lines",
                 parameters={"count": malformed},
             )
+
+    def _check_label_files(self) -> None:
+        """Where each split's labels live, as the audit and the trainer see it.
+
+        Every scanned split is checked, a declared test fold included: a
+        missing label file is not a reviewed negative, and a label only the
+        codec can find would be read as background by the native trainer.
+        """
+        audit = self.audit
+        for split, sc in self.scans.items():
+            count = int(sc["no_label"])
+            if count:
+                sample = list(sc["no_label_images"])
+                audit.add(
+                    LEVEL_ERROR,
+                    _("Images with no label file in %(split)s: %(count)d")
+                    % {"split": split, "count": count},
+                    _(
+                        "An absent label file is not a reviewed negative: without one, the "
+                        "image would enter the ground truth as background without anyone "
+                        "having verified it holds no particles. Write an empty label file "
+                        "for a verified negative, or remove the image. Unlabelled images: "
+                        "%(images)s (%(shown)d of %(count)d)."
+                    )
+                    % {"images": ", ".join(sample), "shown": len(sample), "count": count},
+                    code="images_without_labels",
+                    parameters={"split": split, "count": count, "images": sample},
+                )
+            mismatched = list(sc["label_location_mismatch"])
+            if mismatched:
+                sample = mismatched[:FINDING_SAMPLE_LIMIT]
+                audit.add(
+                    LEVEL_ERROR,
+                    _("Labels the training loader cannot find in %(split)s: %(count)d")
+                    % {"split": split, "count": len(mismatched)},
+                    _(
+                        "The native trainer resolves each label from its image path; "
+                        "these files exist only at a legacy location it does not read, "
+                        "so it would train those images as background. Move each label "
+                        "to the path the loader expects. Images: %(images)s "
+                        "(%(shown)d of %(count)d). First expected path: %(expected)s."
+                    )
+                    % {
+                        "images": ", ".join(name for name, _expected in sample),
+                        "shown": len(sample),
+                        "count": len(mismatched),
+                        "expected": sample[0][1],
+                    },
+                    code="label_location_not_native",
+                    parameters={
+                        "split": split,
+                        "count": len(mismatched),
+                        "images": [name for name, _expected in sample],
+                        "expected": [expected for _name, expected in sample],
+                    },
+                )
 
     def _check_polygons(self) -> None:
         """Degenerate or structurally invalid mask polygons reject a dataset.
@@ -737,6 +807,8 @@ def _empty_coco_scan() -> dict[str, Any]:
         "duplicates": 0,
         "empty": 0,
         "no_label": 0,
+        "no_label_images": [],
+        "label_location_mismatch": [],
         "malformed": 0,
         "n_imgs": 0,
         "path_exists": False,

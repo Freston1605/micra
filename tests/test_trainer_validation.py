@@ -591,3 +591,18 @@ class TestReactividadValidacion:
         assert "✓" in page.lbl_yaml_status.text()
         assert page._val_checks[0][0].text() == "✓"
         assert page._val_checks[5][0].text() == "✓"
+
+
+def test_legacy_label_beside_a_split_image_is_refused(tmp_path: Path):
+    """The GUI hands the YAML to Ultralytics, which cannot read this location."""
+    yaml_path = crear_dataset(tmp_path / "legacy", n_train=2, n_val=2)
+    root = yaml_path.parent
+    image = root / "images" / "train" / "train_0.jpg"
+    native = root / "labels" / "train" / "train_0.txt"
+    (image.parent / "train_0.txt").write_text(native.read_text(encoding="utf-8"), encoding="utf-8")
+    native.unlink()
+
+    ok, msgs = validar(yaml_path)
+
+    assert not ok
+    assert msgs

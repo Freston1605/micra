@@ -44,6 +44,18 @@ class BoxImage:
     boxes: tuple[BBox, ...]
     sha256: str
 
+    @property
+    def is_eligible(self) -> bool:
+        """Whether a label file exists, as resolved by the label codec.
+
+        The audit gate refuses an ineligible image. The evaluator's ground
+        truth and validation paths enumerate only eligible ones, and training
+        is stopped through the audit before an epoch runs. An explicitly empty
+        label file is a reviewed negative and is eligible; ``label is None``
+        means no file was found anywhere.
+        """
+        return self.label is not None
+
 
 @dataclass(frozen=True)
 class ResolvedBoxDataset:
@@ -56,19 +68,37 @@ class ResolvedBoxDataset:
     split_paths: dict[str, Path | None]
     hashes: dict[str, str]
 
+    def eligible_images(self, split: str) -> tuple[BoxImage, ...]:
+        """The images with a label file that the evaluator's ground truth enumerates."""
+        return tuple(image for image in self.splits[split] if image.is_eligible)
+
+    def unlabelled_images(self, split: str) -> tuple[BoxImage, ...]:
+        """The split's images with no label file anywhere the codec searches."""
+        return tuple(image for image in self.splits[split] if not image.is_eligible)
+
     def audit(self) -> DatasetAudit:
-        """Apply the shared audit to the resolved labels, retaining missing-label warnings."""
+        """Apply the shared audit to the resolved labels.
+
+        An image with no label file is passed as absent so the audit reports
+        ``images_without_labels`` and the execution refuses the dataset.
+        """
         records = {
-            split: tuple((image.path, image.boxes if image.label else None) for image in images)
+            split: tuple(
+                (image.path, image.boxes if image.is_eligible else None) for image in images
+            )
             for split, images in self.splits.items()
         }
         return audit_resolved_boxes(list(self.class_names.values()), self.split_paths, records)
 
     def ground_truth(self, split: str) -> dict[str, Any]:
-        """The evaluator's COCO instance view, numbered in the loader's split order."""
+        """The evaluator's COCO instance view over eligible images, numbered from zero.
+
+        Only images with a label file enter the view. An explicitly empty label
+        is a reviewed negative: it appears with no annotations, a true negative.
+        """
         images = []
         annotations = []
-        for image_id, image in enumerate(self.splits[split]):
+        for image_id, image in enumerate(self.eligible_images(split)):
             width, height = image.size
             images.append(
                 {"id": image_id, "file_name": image.path.name, "width": width, "height": height}
@@ -122,22 +152,19 @@ def _refuse_foreign_image_formats(files: tuple[Path, ...]) -> None:
         )
 
 
-def _resolve_box_image(image: Path, native_label: Path, names: dict[int, str]) -> BoxImage:
+def _resolve_box_image(image: Path, names: dict[int, str]) -> BoxImage:
+    """Read one image and the boxes of its codec-resolved label file.
+
+    The label codec is the location authority. The resolved boxes are what
+    the Ultralytics adapter trains on — it overrides the framework's own
+    label lookup — so a warned legacy same-directory or nested label is
+    annotated data, never background.
+    """
     import cv2
     import numpy as np
     from PIL import Image
 
     label = find_label_file(image)
-    if label != (native_label if native_label.is_file() else None):
-        raise PipelineError(
-            "dataset.box_label_location",
-            N_(
-                "image %(image)s has a label at a location the two readers do not agree on; "
-                "place its box labels at %(expected)s using the conventional layout"
-            ),
-            image=str(image),
-            expected=str(native_label),
-        )
     try:
         boxes = read_training_boxes(label, names) if label is not None else ()
     except (OSError, ValueError, OverflowError) as exc:
@@ -172,8 +199,12 @@ def _resolve_box_image(image: Path, native_label: Path, names: dict[int, str]) -
 
 
 def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
-    """Resolve, validate and fingerprint the actual inputs of a headless box execution."""
-    from ultralytics.data.utils import img2label_paths
+    """Resolve, validate and fingerprint the actual inputs of a headless box execution.
+
+    The label codec decides where each image's label lives. The adapter trains
+    on these resolved boxes and overrides the framework's own label lookup, so
+    every location the codec accepts is eligible annotated data.
+    """
 
     data_yaml = data_yaml.resolve()
     declaration = DatasetDeclaration.load(data_yaml)
@@ -218,8 +249,7 @@ def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
                 _refuse_foreign_image_formats(files)
                 for path in _image_members(files):
                     if path not in resolved:
-                        native_label = Path(img2label_paths([str(path)])[0])
-                        sample = _resolve_box_image(path, native_label, names)
+                        sample = _resolve_box_image(path, names)
                         resolved[path] = sample
                         owner[path] = name
                         hashes[hash_key(path, name, directory)] = sample.sha256

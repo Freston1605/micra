@@ -613,6 +613,9 @@ def test_resume_fingerprints_the_resolved_dataset_outside_the_yaml_directory(
     test_images.mkdir()
     test_image = test_images / "plate_test.png"
     test_image.write_bytes((tiny_dataset.parent / "images" / "val" / "plate_v1.png").read_bytes())
+    test_labels = tiny_dataset.parent / "labels" / "test"
+    test_labels.mkdir()
+    (test_labels / "plate_test.txt").write_text("0 0.375 0.375 0.25 0.25\n", encoding="utf-8")
     source = tiny_dataset.read_text(encoding="utf-8").replace("path: .", "path: ../dataset")
     data_yaml.write_text(source + "test: images/test\n", encoding="utf-8")
     output = tmp_path / "executions" / "dataset-drift"
@@ -666,7 +669,6 @@ def test_resume_fingerprints_the_resolved_dataset_outside_the_yaml_directory(
     [
         ("split-list", "must name an image directory"),
         ("missing-split", "needs a directory with images"),
-        ("legacy-label", "the two readers do not agree"),
         ("prediction-label", "five-column boxes"),
         ("corrupt-image", "cannot use"),
         ("unsupported-image", "unsupported headless box image format"),
@@ -696,9 +698,6 @@ def test_headless_box_preflight_names_incompatible_dataset_inputs(
             source.replace("val: images/val", "val: images/absent"), encoding="utf-8"
         )
         offending = tiny_dataset
-    elif problem == "legacy-label":
-        offending = image
-        label.rename(image.with_suffix(".txt"))
     elif problem == "prediction-label":
         offending = label
         label.write_text("0 0.375 0.375 0.25 0.25 0.99\n", encoding="utf-8")
@@ -723,6 +722,38 @@ def test_headless_box_preflight_names_incompatible_dataset_inputs(
     assert message in error
     assert str(offending) in error
     assert not (output / "progress.json").exists()
+
+
+def test_an_unlabelled_image_is_recorded_by_the_audit_and_refuses_the_execution(
+    tmp_path: Path, tiny_dataset: Path
+) -> None:
+    """The run-level audit names the finding and stops before any artifact."""
+    from polyx.pipeline.adapters import YoloDetectionAdapter
+    from polyx.pipeline.config import load_config
+    from polyx.pipeline.errors import PipelineError
+    from polyx.pipeline.execution import run_execution
+
+    (tiny_dataset.parent / "labels" / "val" / "plate_v1.txt").unlink()
+    output = tmp_path / "unlabelled"
+    config = load_config(
+        [
+            f"data_yaml={tiny_dataset}",
+            f"output_dir={output}",
+            "family.weights=yolov8n.yaml",
+            "protocol.epochs=1",
+        ]
+    )
+
+    prepared = YoloDetectionAdapter().prepare(config)
+    assert prepared.audit.ok is False
+    assert "images_without_labels" in {finding.code for finding in prepared.audit.findings}
+
+    with pytest.raises(PipelineError) as raised:
+        run_execution(config)
+
+    assert raised.value.code == "dataset.audit_failed"
+    assert "images_without_labels" in raised.value.parameters["codes"]
+    assert not (output / "completion.json").exists()
 
 
 def test_preflight_refuses_an_image_declared_in_two_folds(

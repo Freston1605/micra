@@ -39,12 +39,15 @@ from polyx.core.data import DatasetDeclaration, SplitKind
 from polyx.core.errors import CodedFailure
 from polyx.core.i18n import N_, _
 from polyx.core.provenance import sha256_file
+from polyx.core.quality.dataset_audit import FINDING_SAMPLE_LIMIT
 from polyx.pipeline.artifacts import write_json
 from polyx.pipeline.coco import (
     coco_predictions_from_results,
     coco_segmentation_predictions_from_results,
 )
 from polyx.pipeline.dataset import (
+    BoxImage,
+    ResolvedBoxDataset,
     coco_store_ground_truth,
     dataset_fingerprint,
     ordered_categories,
@@ -180,6 +183,34 @@ def _declared_dataset(execution: Path, task: str) -> Path:
     return Path(value).expanduser().resolve()
 
 
+def _test_fold_images(resolved: ResolvedBoxDataset, dataset: Path) -> tuple[BoxImage, ...]:
+    """Reviewed test images, refusing the fold if any image has no label file.
+
+    A missing label file is not a reviewed negative: dropping the image would
+    shrink the scored denominator silently, and scoring it as background would
+    invent an annotation nobody made. Resolution has already hashed the files;
+    this refusal happens before the cohort record or any prediction is built,
+    so the cohort the result reports is the cohort it scored.
+    """
+    unlabelled = [image.path.name for image in resolved.unlabelled_images(TEST_SPLIT)]
+    if unlabelled:
+        sample = unlabelled[:FINDING_SAMPLE_LIMIT]
+        raise PipelineError(
+            "heldout.unlabelled_test_image",
+            N_(
+                "the test fold of %(path)s is not fully annotated: missing label "
+                "files: %(count)s (first: %(first)s). An image whose label file is "
+                "absent is refused rather than scored as background; write an empty "
+                "label file for a verified negative or remove the image"
+            ),
+            path=str(dataset),
+            count=len(unlabelled),
+            first=", ".join(sample),
+            images=sample,
+        )
+    return resolved.eligible_images(TEST_SPLIT)
+
+
 def _box_cohort(dataset: Path) -> dict[str, Any]:
     """Resolve the box test fold and hash exactly the files it holds."""
     declaration = DatasetDeclaration.load(dataset)
@@ -195,7 +226,7 @@ def _box_cohort(dataset: Path) -> dict[str, Any]:
             N_("the test split of %(path)s holds no images"), path=str(dataset)
         )
     resolved = resolve_box_dataset(dataset, TEST_SPLIT)
-    images = resolved.splits[TEST_SPLIT]
+    images = _test_fold_images(resolved, dataset)
     root = dataset.parent
 
     def key(path: Path) -> str:
@@ -205,9 +236,10 @@ def _box_cohort(dataset: Path) -> dict[str, Any]:
 
     hashes = {"data.yaml": sha256_file(dataset)}
     for image in images:
+        # _test_fold_images refused every ineligible image of this fold.
+        assert image.label is not None
         hashes[key(image.path)] = image.sha256
-        if image.label is not None:
-            hashes[key(image.label)] = sha256_file(image.label)
+        hashes[key(image.label)] = sha256_file(image.label)
     return {
         "kind": "yolo_boxes",
         "dataset": str(dataset),

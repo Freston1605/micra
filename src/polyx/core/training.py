@@ -11,6 +11,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from polyx.core.errors import CodedFailure
+from polyx.core.i18n import N_
+
 
 @dataclass
 class TrainingConfig:
@@ -37,9 +40,28 @@ def train(
 ) -> Path:
     """Run Ultralytics training and return the path to best.pt.
 
+    The dataset audit runs first: this engine resolves labels through
+    Ultralytics, so a codec-only legacy location would train as background.
+    Refusing here covers both the GUI Trainer and ``polyx-train``.
+
     ``callbacks`` is a mapping of Ultralytics event name -> callable(trainer),
     registered on the model before training (e.g. GUI progress callbacks).
     """
+    from polyx.core.quality.dataset_audit import LEVEL_ERROR, audit_dataset
+
+    audit = audit_dataset(Path(cfg.data_yaml))
+    if not audit.ok:
+        problems = "; ".join(
+            f"{finding.code}: {finding.title}. {finding.detail}".strip()
+            for finding in audit.findings
+            if finding.level == LEVEL_ERROR
+        )
+        raise CodedFailure(
+            "train.dataset_audit_failed",
+            N_("the dataset audit refused training: %(problems)s"),
+            problems=problems,
+        )
+
     try:
         from ultralytics import YOLO
     except Exception as exc:  # pragma: no cover - import guard

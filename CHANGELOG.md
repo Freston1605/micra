@@ -183,6 +183,15 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script — the `polyx-*` aliases included — remains.
 
 ### Fixed
+- **An absent label file is not a reviewed negative (#223).** The dataset audit
+  now reports `images_without_labels` at error level in every resolved split,
+  a declared `test` fold included, and the ground truth, validation paths and
+  held-out cohort enumerate eligible images only. An explicit empty label file
+  stays a reviewed negative. On the resolved headless path the label codec is
+  the location authority; the shipped GUI Trainer and `polyx-train` resolve
+  labels through Ultralytics and now refuse a codec-only legacy location with
+  `label_location_not_native`, so they fail closed instead of training those
+  images as background.
 - **The local gate warns when the environment predates the pins (#81).**
   `tools/check.py` selects an interpreter that may belong to another checkout,
   so `uv lock --check` proved the two dependency files agree with each other
