@@ -24,6 +24,7 @@ treating it as real. Every other argument is forwarded to pytest untouched.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -121,18 +122,32 @@ def _run(command: list[str], env: dict[str, str]) -> int:
 DEPENDENCY_FILES = ("pyproject.toml", "uv.lock")
 
 
-def _site_packages(python: Path) -> Path | None:
-    """The chosen interpreter's ``site-packages``, or None when it cannot say.
+def _environment(python: Path) -> tuple[Path, Path] | None:
+    """The chosen interpreter's ``sys.prefix`` and ``site-packages``.
 
-    The gate may have picked an interpreter from another checkout, so the path
-    is asked of that interpreter rather than derived from its directory.
+    The gate may have picked an interpreter from another checkout, so both
+    paths are asked of that interpreter: ``sys.prefix`` names the environment
+    the warning talks about, and ``purelib`` is where its ``.dist-info``
+    directories live. Deriving either from the executable path would call a
+    system interpreter's ``/usr`` a virtual environment.
     """
-    probe = "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+    probe = (
+        "import json, sys, sysconfig; "
+        "print(json.dumps({'prefix': sys.prefix, "
+        "'purelib': sysconfig.get_paths()['purelib']}))"
+    )
     result = subprocess.run([str(python), "-c", probe], capture_output=True, text=True, check=False)
     if result.returncode != 0 or not result.stdout.strip():
         return None
-    site = Path(result.stdout.strip().splitlines()[0])
-    return site if site.is_dir() else None
+    try:
+        data = json.loads(result.stdout.strip().splitlines()[0])
+        prefix = Path(data["prefix"])
+        site = Path(data["purelib"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not site.is_dir():
+        return None
+    return prefix, site
 
 
 def _environment_stamp(site: Path) -> float | None:
@@ -157,9 +172,10 @@ def _dependency_drift(root: Path, python: Path) -> str | None:
     changed, which is how a branch that moves a dependency passes the gate
     against the environment it was about to invalidate.
     """
-    site = _site_packages(python)
-    if site is None:
+    environment = _environment(python)
+    if environment is None:
         return None
+    prefix, site = environment
     stamp = _environment_stamp(site)
     if stamp is None:
         return None
@@ -171,9 +187,8 @@ def _dependency_drift(root: Path, python: Path) -> str | None:
     if not newer:
         return None
     files = " and ".join(newer)
-    environment = python.parent.parent
     return (
-        f"{files} changed after {environment} was synced, so the gate may be "
+        f"{files} changed after {prefix} was synced, so the gate may be "
         "checking a stack those files no longer describe. "
         "Run `uv sync --extra gui` to refresh it."
     )

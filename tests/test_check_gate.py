@@ -166,13 +166,25 @@ def test_static_rejects_pytest_arguments():
     assert "--static" in result.stderr
 
 
+def _interpreter(checkout: Path) -> Path:
+    """The interpreter inside a checkout's ``.venv``, with the OS's layout."""
+    if os.name == "nt":
+        return checkout / ".venv" / "Scripts" / "python.exe"
+    return checkout / ".venv" / "bin" / "python"
+
+
 def _fake_environment(
     root: Path, *, environment_at: float, pyproject_at: float, lock_at: float
-) -> Path:
-    """A checkout plus the ``site-packages`` of an environment it was synced into."""
+) -> tuple[Path, Path]:
+    """A checkout plus the environment it was synced into.
+
+    Returns the ``sys.prefix`` and ``site-packages`` a real probe would report,
+    so ``_dependency_drift`` is exercised without a subprocess.
+    """
     (root / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
     (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-    site = root / ".venv" / "lib" / "python3.12" / "site-packages"
+    prefix = root / ".venv"
+    site = prefix / "lib" / "python3.12" / "site-packages"
     dist_info = site / "micra-2.0.0.dist-info"
     dist_info.mkdir(parents=True)
     for path, stamp in (
@@ -182,32 +194,32 @@ def _fake_environment(
         (site, environment_at),
     ):
         os.utime(path, (stamp, stamp))
-    return site
+    return prefix, site
 
 
 def test_dependency_files_newer_than_the_environment_are_reported(tmp_path, monkeypatch):
     gate = _gate_module()
-    site = _fake_environment(
+    prefix, site = _fake_environment(
         tmp_path, environment_at=1_000.0, pyproject_at=2_000.0, lock_at=2_000.0
     )
-    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+    monkeypatch.setattr(gate, "_environment", lambda python: (prefix, site))
 
-    warning = gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python"))
+    warning = gate._dependency_drift(tmp_path, _interpreter(tmp_path))
 
     assert warning is not None
     assert "pyproject.toml and uv.lock" in warning
     assert "uv sync --extra gui" in warning
-    assert "/checkout/.venv" in warning
+    assert str(prefix) in warning
 
 
 def test_only_the_edited_dependency_file_is_named(tmp_path, monkeypatch):
     gate = _gate_module()
-    site = _fake_environment(
+    prefix, site = _fake_environment(
         tmp_path, environment_at=2_000.0, pyproject_at=1_000.0, lock_at=3_000.0
     )
-    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+    monkeypatch.setattr(gate, "_environment", lambda python: (prefix, site))
 
-    warning = gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python"))
+    warning = gate._dependency_drift(tmp_path, _interpreter(tmp_path))
 
     assert warning is not None
     assert "uv.lock changed" in warning
@@ -216,12 +228,12 @@ def test_only_the_edited_dependency_file_is_named(tmp_path, monkeypatch):
 
 def test_a_synced_environment_reports_nothing(tmp_path, monkeypatch):
     gate = _gate_module()
-    site = _fake_environment(
+    prefix, site = _fake_environment(
         tmp_path, environment_at=3_000.0, pyproject_at=1_000.0, lock_at=1_000.0
     )
-    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+    monkeypatch.setattr(gate, "_environment", lambda python: (prefix, site))
 
-    assert gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python")) is None
+    assert gate._dependency_drift(tmp_path, _interpreter(tmp_path)) is None
 
 
 def test_an_environment_without_distributions_is_not_a_finding(tmp_path, monkeypatch):
@@ -229,26 +241,62 @@ def test_an_environment_without_distributions_is_not_a_finding(tmp_path, monkeyp
     gate = _gate_module()
     site = tmp_path / "site-packages"
     site.mkdir()
-    monkeypatch.setattr(gate, "_site_packages", lambda python: site)
+    monkeypatch.setattr(gate, "_environment", lambda python: (tmp_path / ".venv", site))
     (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
 
-    assert gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python")) is None
+    assert gate._dependency_drift(tmp_path, _interpreter(tmp_path)) is None
 
 
-def test_an_interpreter_that_cannot_report_its_site_packages_is_not_a_finding(
-    tmp_path, monkeypatch
-):
+def test_an_interpreter_that_cannot_report_its_environment_is_not_a_finding(tmp_path, monkeypatch):
     gate = _gate_module()
-    monkeypatch.setattr(gate, "_site_packages", lambda python: None)
+    monkeypatch.setattr(gate, "_environment", lambda python: None)
     (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
 
-    assert gate._dependency_drift(tmp_path, Path("/checkout/.venv/bin/python")) is None
+    assert gate._dependency_drift(tmp_path, _interpreter(tmp_path)) is None
 
 
-def test_the_drift_warning_does_not_stop_the_gate(monkeypatch, capsys):
+def test_the_real_probe_reads_a_created_environment(tmp_path):
+    """The probe runs an interpreter, not a monkeypatched path.
+
+    A throwaway venv makes ``sys.prefix`` and ``purelib`` answer something the
+    test controls, so the subprocess boundary is exercised end to end.
+    """
+    import venv
+
+    gate = _gate_module()
+    environment = tmp_path / "environment"
+    venv.EnvBuilder(with_pip=False, system_site_packages=False).create(environment)
+    python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+    found = gate._environment(python)
+
+    assert found is not None
+    prefix, site = found
+    assert prefix.resolve() == environment.resolve()
+    assert site.resolve().is_relative_to(environment.resolve())
+
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (checkout / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    dist_info = site / "micra-2.0.0.dist-info"
+    dist_info.mkdir()
+    for path in (checkout / "pyproject.toml", checkout / "uv.lock"):
+        os.utime(path, (2_000.0, 2_000.0))
+    for path in (site, dist_info):
+        os.utime(path, (1_000.0, 1_000.0))
+
+    warning = gate._dependency_drift(checkout, python)
+
+    assert warning is not None
+    assert str(environment) in warning
+    assert "uv sync --extra gui" in warning
+
+
+def test_the_drift_warning_does_not_stop_the_gate(tmp_path, monkeypatch, capsys):
     """It is a warning: every command still runs and the exit status is unchanged."""
     gate = _gate_module()
-    monkeypatch.setattr(gate, "_python", lambda: Path("/checkout/.venv/bin/python"))
+    monkeypatch.setattr(gate, "_python", lambda: _interpreter(tmp_path))
     monkeypatch.setattr(
         gate,
         "_dependency_drift",

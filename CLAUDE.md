@@ -1122,16 +1122,29 @@ observed threshold, carrying its criterion.
 ```python
 criterion: Criterion     # localisation | with_class
 threshold: float
-tp, fp, fn, miscls: int  # the match counters the figure came from
+tp, fp, fn, miscls: int  # the counters the criterion counts; see below
 precision, recall, f1: float
 ```
+`tp/fp/fn` are already folded by the criterion, so precision and recall are
+reproducible from the fields. `miscls` is the reconciliation count: under
+localisation it is a subset of `tp`; under with class it is already inside
+`fp` and `fn` and is absent from `tp`. It is never added on top of the three
+counters a second time.
 `Criterion.LOCALISATION` asks only whether the particle was found: a
-misclassified box is reported apart and stays out of both denominators.
-`Criterion.WITH_CLASS` also requires the polymer, so that box is a false
-positive of the predicted class and a false negative of the true one. The
-Results KPIs use the run's decision under localisation; the confidence advice,
-the Compare table's F1 and the report's second F1 column use with class. Every
-label in the interface names the criterion it shows.
+misclassified box is a true positive, so it adds no false positive and no
+false negative. `Criterion.WITH_CLASS` also requires the polymer, so that box
+is a false positive of the predicted class and a false negative of the true
+one. The Results KPIs and its per-image table use the run's decision under
+localisation; the confidence advice, the Compare table's F1 and the report's
+second F1 column use with class. Every label in the interface names the
+criterion it shows. The report's counter table shows the localisation
+counters, and its note converts them to the with-class figure.
+
+Matching is greedy and confidence-ordered: `match_image` visits predictions
+from highest to lowest confidence, pairs each with the best unused ground
+truth above the IoU threshold, and only then checks the class. A ground-truth
+box is paired at most once. The shared evaluator applies COCO's cap of 100
+predictions per image and class before scoring.
 
 ### `MatchResult` (src/polyx/core/quality/metrics.py)
 Prediction vs GT matching (box or mask IoU at the run's `iou_tp`):

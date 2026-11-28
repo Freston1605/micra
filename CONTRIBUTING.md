@@ -166,7 +166,16 @@ That indirection means the selected interpreter may be older than the branch's
 pins. The gate warns — without failing — when `pyproject.toml` or `uv.lock`
 changed after the selected environment was synced, naming
 `uv sync --extra gui` as the remedy; `uv lock --check` only proves the two
-dependency files agree with each other.
+dependency files agree with each other. The warning runs in both the full gate
+and `--static`.
+
+The stamp is the newest `.dist-info` mtime, not a content comparison, so a
+fresh worktree that inherits the main checkout's `.venv` can warn even when
+the dependency files are byte-identical: checking out or editing them moves
+their mtime past the environment's. Treat the warning as a prompt to sync, not
+as proof that the environment is wrong. The inherited-`.venv` worktree
+scenario is verified by hand; the suite exercises the real probe against a
+throwaway environment and pins the comparison arithmetic separately.
 
 Tests run **serially by default**. CI always runs serially and remains the
 reproducibility reference. `--parallel` (bare: `-n auto`) or `--parallel=N`

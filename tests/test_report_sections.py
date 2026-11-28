@@ -210,6 +210,22 @@ def test_models_body_shows_a_custom_alias_verbatim(tmp_path, selected_language):
         assert "<td>my-model</td>" in body
 
 
+def test_models_body_labels_its_counters_with_the_criterion(tmp_path):
+    """The counter table is localisation and says so, including ``miscls`` in TP."""
+    import polyx.gui.report.sections as sections
+    from tests.match_fixtures import misclassified_run
+
+    run = misclassified_run(tmp_path)
+    body = sections._section_models(run, run.results, run.results[0], True)
+
+    assert "True Positives (localisation)" in body
+    # One correct pair plus one well-placed wrong-class pair: localisation TP=2,
+    # FP=0, FN=0, and the Misclassified column still names the one pair.
+    assert (
+        "<td class='r'>2</td><td class='r'>0</td><td class='r'>0</td><td class='r'>1</td>" in body
+    )
+
+
 def test_comparison_body_without_a_second_model_explains_why(tmp_path):
     """Comparison: one model means no comparison, but the caption is rendered."""
     import polyx.gui.report.sections as sections

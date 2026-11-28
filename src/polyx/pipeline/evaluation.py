@@ -9,9 +9,13 @@ arithmetic. Two different questions are kept apart:
   select checkpoints and to drive Optuna.
 
 The second one reuses the project's ``Criterion``/``Score`` definition through
-``Score.from_counts``: a well-placed box of the wrong polymer is a false
-positive of the predicted class and a false negative of the true one. Every
-figure names the overlap, the criterion and the split it was computed on.
+``Score.from_counts``. The selection figure is class-aware: a well-placed box
+of the wrong polymer is a false positive of the predicted class and a false
+negative of the true one. The localisation figure is class-agnostic and keeps
+that pair as a true positive, adding no false positive or false negative.
+Every figure names the overlap, the criterion and the split it was computed
+on; ``localisation_score`` also carries the definition version so a score
+recorded before #224 is not read as if it used today's arithmetic.
 """
 
 from __future__ import annotations
@@ -48,6 +52,14 @@ _MAX_DETECTIONS = 100
 #: below this ceiling, so a busy polymer cannot consume another one's share
 #: before the evaluator applies the reference cap per category.
 _CANDIDATE_CEILING = 1000
+
+#: Definition version of the localisation arithmetic. Version 1 removed a
+#: well-placed-but-wrong-class pair from both denominators; version 2 (#224)
+#: counts it as a true positive and adds no false positive or false negative.
+#: Artifacts written before this field existed carry no marker and were scored
+#: with version 1, so their ``localisation_score`` is not interchangeable with
+#: a current one.
+LOCALISATION_DEFINITION = 2
 
 
 def prediction_budget(class_count: int) -> int:
@@ -595,6 +607,7 @@ class SharedEvaluator:
             "localisation_score": {
                 "value": localisation,
                 "criterion": self.localisation_criterion,
+                "revision": LOCALISATION_DEFINITION,
             },
             "mAP50": {
                 "value": map50,

@@ -459,14 +459,15 @@ def _section_models(run, results_2, all_results, any_gt: bool) -> str:
         n_img = len({r.image_path for r in rs})
         n_det = sum(len(r.predictions) for r in rs)
         cf = [p.conf for r in rs for p in r.predictions]
-        tp = sum(r.tp for r in rs)
-        fp = sum(r.fp for r in rs)
-        fn = sum(r.fn for r in rs)
-        mc = sum(r.miscls for r in rs)
         # One decision, two criteria: the operating-point module owns both
-        # names and both denominators.
-        f1_loc = Score.from_decision(rs, Criterion.LOCALISATION, run.params.conf).f1
-        f1_cls = Score.from_decision(rs, Criterion.WITH_CLASS, run.params.conf).f1
+        # names and the counters each one folds ``miscls`` into. The table
+        # shows the localisation counters, and its header says so; the note
+        # maps them to the with-class figure.
+        localisation = Score.from_decision(rs, Criterion.LOCALISATION, run.params.conf)
+        with_class = Score.from_decision(rs, Criterion.WITH_CLASS, run.params.conf)
+        tp, fp, fn, mc = localisation.tp, localisation.fp, localisation.fn, localisation.miscls
+        f1_loc = localisation.f1
+        f1_cls = with_class.f1
         avg_cf = (sum(cf) / len(cf)) if cf else 0
         there_is_gt = any(r.has_gt for r in rs)
         c_loc = f"{f1_loc:.3f}" if there_is_gt else "—"
@@ -485,8 +486,8 @@ def _section_models(run, results_2, all_results, any_gt: bool) -> str:
         localisation = Score.from_decision(all_results, Criterion.LOCALISATION, run.params.conf)
         with_class = Score.from_decision(all_results, Criterion.WITH_CLASS, run.params.conf)
         note_miscls = ngettext(
-            "<p><strong>The two F1 figures measure different things.</strong> <em>Localisation</em> answers whether the detector finds the particle (P %(pl)s · R %(rl)s · <strong>F1 %(fl)s</strong>). <em>With class</em> also requires getting the polymer right, counting each misclassified box as a false positive of the predicted class and a false negative of the real one (P %(pc)s · R %(rc)s · <strong>F1 %(fc)s</strong>).</p><p>The difference corresponds to <strong>%(mc)s</strong> particle located correctly but assigned to the wrong class. It is the figure that reconciles this table with the per-class precision in the error section.</p>",
-            "<p><strong>The two F1 figures measure different things.</strong> <em>Localisation</em> answers whether the detector finds the particle (P %(pl)s · R %(rl)s · <strong>F1 %(fl)s</strong>). <em>With class</em> also requires getting the polymer right, counting each misclassified box as a false positive of the predicted class and a false negative of the real one (P %(pc)s · R %(rc)s · <strong>F1 %(fc)s</strong>).</p><p>The difference corresponds to <strong>%(mc)s</strong> particles located correctly but assigned to the wrong class. It is the figure that reconciles this table with the per-class precision in the error section.</p>",
+            "<p><strong>The two F1 figures measure different things.</strong> <em>Localisation</em> answers whether the detector finds the particle (P %(pl)s · R %(rl)s · <strong>F1 %(fl)s</strong>); its counters are the table's, so a correctly located box with the wrong class is inside True Positives and the Misclassified column names that subset. <em>With class</em> also requires getting the polymer right: it uses True Positives − Misclassified as its true positives and adds the same count to False Positives and False Negatives (P %(pc)s · R %(rc)s · <strong>F1 %(fc)s</strong>).</p><p>The Misclassified column is therefore <strong>%(mc)s</strong> particle located correctly but assigned to the wrong class. It reconciles this table with the per-class precision in the error section.</p>",
+            "<p><strong>The two F1 figures measure different things.</strong> <em>Localisation</em> answers whether the detector finds the particle (P %(pl)s · R %(rl)s · <strong>F1 %(fl)s</strong>); its counters are the table's, so a correctly located box with the wrong class is inside True Positives and the Misclassified column names that subset. <em>With class</em> also requires getting the polymer right: it uses True Positives − Misclassified as its true positives and adds the same count to False Positives and False Negatives (P %(pc)s · R %(rc)s · <strong>F1 %(fc)s</strong>).</p><p>The Misclassified column is therefore <strong>%(mc)s</strong> particles located correctly but assigned to the wrong class. It reconciles this table with the per-class precision in the error section.</p>",
             with_class.miscls,
         ) % {
             "pl": f"{localisation.precision:.3f}",
@@ -500,7 +501,7 @@ def _section_models(run, results_2, all_results, any_gt: bool) -> str:
 
     return f"""
 <table class='data'><tr>{_("<th>Model</th><th>Images</th><th>Detections</th><th>Mean conf.</th>")}
-{_("<th>True Positives</th><th>False Positives</th><th>False Negatives</th>")}
+{_("<th>True Positives (localisation)</th><th>False Positives (localisation)</th><th>False Negatives (localisation)</th>")}
 {_("<th>Misclassified</th>")}<th>F1<br><span style='font-weight:400;font-size:8.5pt'>{_("localisation")}</span></th>
 <th>F1<br><span style='font-weight:400;font-size:8.5pt'>{_("with class")}</span></th></tr>{rows_models}</table>
 {note_miscls}"""
@@ -574,7 +575,7 @@ def _section_comparison(run, results_2) -> str:
             if there_is_gt:
                 header_line += (
                     "<th><span style='font-weight:400;font-size:8.5pt'>"
-                    + _("True Positives/False Positives/False Negatives")
+                    + _("True Positives/False Positives/False Negatives (localisation)")
                     + "</span></th>"
                 )
         header_line += "</tr>"
@@ -591,7 +592,13 @@ def _section_comparison(run, results_2) -> str:
                     continue
                 rows_2 += f"<td class='r'>{len(r.predictions)}</td>"
                 if there_is_gt:
-                    cell = f"{r.tp}/{r.fp}/{r.fn}" if r.has_gt else "—"
+                    if r.has_gt:
+                        row_score = Score.from_decision(
+                            [r], Criterion.LOCALISATION, run.params.conf
+                        )
+                        cell = f"{row_score.tp}/{row_score.fp}/{row_score.fn}"
+                    else:
+                        cell = "—"
                     rows_2 += f"<td class='r'>{cell}</td>"
             rows_2 += "</tr>"
 

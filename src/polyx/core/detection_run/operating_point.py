@@ -79,13 +79,14 @@ class Score:
     """Precision, recall and F1 at one threshold, under one named criterion.
 
     ``tp``, ``fp`` and ``fn`` are the counters *as the criterion counts them*,
-    so ``precision`` and ``recall`` are always reproducible from the fields:
-    a well-placed box with the wrong polymer is credited as found under
-    localisation and counted as a false positive of the predicted class and a
-    false negative of the true one under with class. ``miscls`` keeps the
-    number of such pairs apart, because the report reconciles its two F1
-    figures with that count — it is already inside the counters above, never
-    an extra error on top of them.
+    so ``precision`` and ``recall`` are always reproducible from the fields.
+    A well-placed box with the wrong polymer is part of ``tp`` under
+    localisation (the particle was found) and is counted as a false positive
+    of the predicted class plus a false negative of the true one under with
+    class. ``miscls`` names that same pair in both cases: under localisation it
+    is a subset of ``tp``; under with class it is already inside ``fp`` and
+    ``fn`` and is not part of ``tp``. It is the reconciliation count between
+    the two criteria, never an extra error added on top of them.
     """
 
     criterion: Criterion
@@ -113,12 +114,19 @@ class Score:
 
         ``tp/fp/fn`` are the plain match counters and ``miscls`` the
         well-placed-but-wrong-class boxes. The two criteria differ in where a
-        misclassification goes, and nowhere else: localisation credits it as a
-        true positive (the box was on the particle), so it enters neither
-        denominator; with class counts it as a false positive of the predicted
-        class and a false negative of the real one, so it enters both. Every
-        caller that has counts goes through here, so the two criteria are
-        defined once.
+        misclassification goes, and nowhere else:
+
+        * localisation returns ``tp + miscls``, ``fp`` and ``fn``: the box was
+          on the particle, so it adds no false positive and no false negative;
+        * with class returns ``tp``, ``fp + miscls`` and ``fn + miscls``: the
+          pair is a false positive of the predicted class and a false negative
+          of the real one, so it is not a true positive there.
+
+        In both cases ``miscls`` travels unchanged as the reconciliation count:
+        the caller can read it as a subset of localisation ``tp`` or as the
+        amount already folded into the with-class denominators. Every caller
+        that has counts goes through here, so the two criteria are defined
+        once.
         """
         if criterion is Criterion.WITH_CLASS:
             precision, recall, f1 = prf1(tp, fp + miscls, fn + miscls)

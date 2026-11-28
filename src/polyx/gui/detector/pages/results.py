@@ -77,9 +77,9 @@ class ResultsPage(DetectorPage):
         self.kpi_dets = KPICard(_("Detections"), T.ACCENT)
         self.kpi_conf = KPICard(_("Mean confidence"), T.VIO)
         self.kpi_size = KPICard(_("Mean size (μm)"), T.WARN)
-        self.kpi_tp = KPICard(str(LABEL_TP), T.OK)
-        self.kpi_fp = KPICard(str(LABEL_FP), T.WARN)
-        self.kpi_fn = KPICard(str(LABEL_FN), T.ERR)
+        self.kpi_tp = KPICard(f"{LABEL_TP} ({criterion})", T.OK)
+        self.kpi_fp = KPICard(f"{LABEL_FP} ({criterion})", T.WARN)
+        self.kpi_fn = KPICard(f"{LABEL_FN} ({criterion})", T.ERR)
         self.kpi_f1 = KPICard(_("F1 (%(criterion)s)") % {"criterion": criterion}, T.ACCENT_D)
         grid.addWidget(self.kpi_imgs, 0, 0)
         grid.addWidget(self.kpi_dets, 0, 1)
@@ -171,9 +171,9 @@ class ResultsPage(DetectorPage):
                 _("Image"),
                 _("Pred"),
                 "GT",
-                str(LABEL_TP),
-                str(LABEL_FP),
-                str(LABEL_FN),
+                f"{LABEL_TP} ({criterion})",
+                f"{LABEL_FP} ({criterion})",
+                f"{LABEL_FN} ({criterion})",
                 _("Mean conf."),
             ]
         )
@@ -216,7 +216,8 @@ class ResultsPage(DetectorPage):
         confs = [p.conf for r in all_results for p in r.predictions]
         sizes = [p.diam_um for r in all_results for p in r.predictions if p.diam_um]
         # The run's own decision (``ImageResult.match``), summed. The criterion
-        # only chooses the denominators; nothing is matched a second time.
+        # decides where ``miscls`` enters the counters; nothing is matched a
+        # second time.
         measured = Score.from_decision(all_results, self._criterion, state.params.conf)
 
         # A retranslation rebuilds the page and refreshes it: an empty batch
@@ -262,6 +263,9 @@ class ResultsPage(DetectorPage):
                 avg_c = (
                     sum(p.conf for p in r.predictions) / len(r.predictions) if r.predictions else 0
                 )
+                # The same folded counters as the KPI row: the table and the
+                # cards must not show two definitions under one header.
+                row_score = Score.from_decision([r], self._criterion, state.params.conf)
                 rows.append(
                     (
                         label,
@@ -269,9 +273,9 @@ class ResultsPage(DetectorPage):
                         r.image_path,
                         len(r.predictions),
                         len(r.gt),
-                        r.tp,
-                        r.fp,
-                        r.fn,
+                        row_score.tp,
+                        row_score.fp,
+                        row_score.fn,
                         avg_c,
                     )
                 )
@@ -492,9 +496,9 @@ class ResultsPage(DetectorPage):
 
         Strict: a well placed box with the wrong class counts as a false
         positive of the predicted class and a false negative of the true one.
-        The permissive criterion, which leaves it out of both denominators,
-        overestimates the performance and moreover contradicts the per-class
-        precision table.
+        The permissive criterion — the box was found, so it adds no false
+        positive or false negative — overestimates the performance and
+        moreover contradicts the per-class precision table.
         """
         measured = score(gt_results, Criterion.WITH_CLASS, threshold)
         return measured.f1, measured.precision, measured.recall

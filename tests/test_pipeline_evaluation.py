@@ -129,6 +129,7 @@ def test_wrong_polymer_is_not_a_true_positive() -> None:
     result = evaluator.evaluate([_prediction([0, 10, 20, 20], 0.9, category=1)])
     assert result["selection"]["value"] == 0.0
     assert result["figures"]["localisation_score"]["value"] == pytest.approx(1.0)
+    assert result["figures"]["localisation_score"]["revision"] == 2
 
 
 def test_the_detection_cap_is_applied_per_image_and_category() -> None:

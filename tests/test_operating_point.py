@@ -165,6 +165,23 @@ def test_prf1_is_the_one_arithmetic_helper():
     assert prf1(0, 0, 0) == (0.0, 0.0, 0.0)
 
 
+def test_from_counts_folds_the_same_pair_for_both_criteria():
+    """``miscls`` is a subset of localisation TP and is inside with-class FP/FN."""
+    localisation = Score.from_counts(Criterion.LOCALISATION, 0.5, tp=3, fp=2, fn=1, miscls=4)
+    with_class = Score.from_counts(Criterion.WITH_CLASS, 0.5, tp=3, fp=2, fn=1, miscls=4)
+
+    assert (localisation.tp, localisation.fp, localisation.fn, localisation.miscls) == (
+        7,
+        2,
+        1,
+        4,
+    )
+    assert (with_class.tp, with_class.fp, with_class.fn, with_class.miscls) == (3, 6, 5, 4)
+    assert localisation.tp - localisation.miscls == with_class.tp
+    assert localisation.fp + localisation.miscls == with_class.fp
+    assert localisation.fn + localisation.miscls == with_class.fn
+
+
 # ── Recommending an operating point ──────────────────────────────────────
 
 

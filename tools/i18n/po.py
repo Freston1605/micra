@@ -30,10 +30,23 @@ _ESCAPES = {
 
 _FIELD = re.compile(r"^(msgctxt|msgid_plural|msgid|msgstr)(?:\[(\d+)\])?\s+(.*)$")
 
-#: The conversion characters a message may use. ``%`` substitutions are
-#: ``s``, ``d``, ``i``, ``f`` and ``r`` here; anything else is not a token the
-#: audit reads, so the three expressions below share this one set.
-_CONVERSION = r"[sdifr]"
+#: The conversion characters a message may use. This is Python's ``%`` set
+#: (``d i o u x X e E f F g G c r s a``); a ``%`` conversion itself takes no
+#: mapping key, so it is not a named-placeholder conversion. The three
+#: expressions below share this one set.
+_CONVERSION = r"[diouxXeEfFgGcrsa]"
+
+#: The tail of a ``%(name)`` specifier. Flags, a width and a precision belong
+#: to the token (``%(done)6.1f``, ``%(pct)3d``), but prose such as
+#: ``50%(w/w) samples`` must not be read as a conversion: a space is only a
+#: flag when a real numeric width follows it, so ``) s`` is text while
+#: ``) 5d`` is a format. The malformed-placeholder scanner uses this stricter
+#: tail; the valid-name expression keeps accepting the space flag.
+_FORMAT_TAIL = (
+    r"(?:"
+    r"[#0+\-]*" + _CONVERSION + r"|"
+    r"[#0 +\-]*(?:\d+(?:\.\d+)?|\.\d+)" + _CONVERSION + r")"
+)
 
 #: Named ``%(name)s`` specifiers and the positional forms the audit rejects.
 #: The conversion specifier may carry flags, a width and a precision
@@ -49,11 +62,11 @@ _POSITIONAL_PLACEHOLDER = re.compile(r"(?<!%)%(" + _CONVERSION + r")")
 #: contributes nothing to either side of the comparison: a message id and a
 #: translation that share the same malformed name would compare equal. This
 #: expression stops at the first ``)`` after the opening so the diagnostic can
-#: quote the whole token back. A ``%`` that is not a substitution — ``50%(w/w)``
-#: — carries no conversion character and is left alone.
+#: quote the whole token back. The tail must be an adjacent conversion or a
+#: real width, so a ``%`` that is not a substitution — ``50%(w/w) samples``,
+#: ``50%(w/w) of the mass`` — is left alone.
 _MALFORMED_PLACEHOLDER = re.compile(
-    r"(?<!%)%\((?![A-Za-z_][A-Za-z0-9_]*\))([^()\n]{0,200})\)(?:[#0 +\-]*\d*(?:\.\d+)?)"
-    + _CONVERSION
+    r"(?<!%)%\((?![A-Za-z_][A-Za-z0-9_]*\))([^()\n]{0,200})\)" + _FORMAT_TAIL
 )
 
 
