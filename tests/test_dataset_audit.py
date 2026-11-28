@@ -16,11 +16,7 @@ import pytest
 import yaml
 
 from polyx.core.quality.dataset_audit import LEVEL_ERROR, LEVEL_WARN, audit_dataset
-from tests.conftest import split_dataset, write_image, write_yaml
-
-PET_BOX = "0 0.5 0.5 0.10 0.10"
-PP_BOX = "1 0.5 0.5 0.30 0.30"
-POLYGON = "0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9"
+from tests.conftest import PET_BOX, POLYGON, PP_BOX, split_dataset, write_image, write_yaml
 
 
 def make_dataset(

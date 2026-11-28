@@ -42,6 +42,13 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
 
 os.environ.setdefault("POLYX_LOCALE", "es")
 
+#: The suite's standard box labels. The two areas are deliberately far apart
+#: (0.01 vs 0.09) so a "clean" dataset does not trigger the size-similarity
+#: warning; a YOLO-seg polygon is valid YOLO but not a detection box.
+PET_BOX = "0 0.5 0.5 0.10 0.10"
+PP_BOX = "1 0.5 0.5 0.30 0.30"
+POLYGON = "0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9"
+
 
 def write_image(
     path: Path,
@@ -128,6 +135,29 @@ def split_dataset(
         lines += [f"  {index}: {name}" for index, name in enumerate(names)]
         (root / "data.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return root
+
+
+def box_dataset(
+    root: Path,
+    *,
+    train: dict[str, str | None] | None = None,
+    val: dict[str, str | None] | None = None,
+    test: dict[str, str | None] | None = None,
+) -> Path:
+    """A tiny conventional box dataset with reviewed train/val folds.
+
+    The one builder for tests that need a resolvable ``data.yaml``: the
+    train and val folds default to two boxed images, and a test fold is added
+    only when the test needs one. Returns the YAML path.
+    """
+    splits = {
+        "train": train if train is not None else {"train_boxed": f"{PET_BOX}\n"},
+        "val": val if val is not None else {"val_boxed": f"{PET_BOX}\n"},
+    }
+    if test is not None:
+        splits["test"] = test
+    split_dataset(root, splits, data_yaml=True)
+    return root / "data.yaml"
 
 
 def build_tiny_dataset(root: Path) -> Path:

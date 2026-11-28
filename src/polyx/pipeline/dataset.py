@@ -72,6 +72,10 @@ class ResolvedBoxDataset:
         """The images with a label file that the evaluator's ground truth enumerates."""
         return tuple(image for image in self.splits[split] if image.is_eligible)
 
+    def unlabelled_images(self, split: str) -> tuple[BoxImage, ...]:
+        """The split's images with no label file anywhere the codec searches."""
+        return tuple(image for image in self.splits[split] if not image.is_eligible)
+
     def audit(self) -> DatasetAudit:
         """Apply the shared audit to the resolved labels.
 

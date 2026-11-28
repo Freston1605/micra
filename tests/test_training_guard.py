@@ -16,35 +16,27 @@ import ultralytics
 
 from polyx.core.errors import CodedFailure
 from polyx.core.training import TrainingConfig, train
-from tests.conftest import split_dataset
-
-PET_BOX = "0 0.5 0.5 0.10 0.10"
+from tests.conftest import box_dataset
 
 
 def test_train_refuses_a_label_location_ultralytics_cannot_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root = split_dataset(
-        tmp_path / "dataset",
-        {
-            "train": {"train_0": f"{PET_BOX}\n"},
-            "val": {"val_0": f"{PET_BOX}\n"},
-        },
-        data_yaml=True,
-    )
+    yaml_path = box_dataset(tmp_path / "dataset")
+    root = yaml_path.parent
     for split in ("train", "val"):
-        image = root / "images" / split / f"{split}_0.png"
-        native = root / "labels" / split / f"{image.stem}.txt"
-        (image.parent / f"{image.stem}.txt").write_text(
-            native.read_text(encoding="utf-8"), encoding="utf-8"
-        )
-        native.unlink()
+        for image in (root / "images" / split).glob("*.png"):
+            native = root / "labels" / split / f"{image.stem}.txt"
+            (image.parent / f"{image.stem}.txt").write_text(
+                native.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            native.unlink()
 
     def _must_not_start(*_args, **_kwargs):
         pytest.fail("Ultralytics must not start on a dataset the audit rejects")
 
     monkeypatch.setattr(ultralytics, "YOLO", _must_not_start)
-    cfg = TrainingConfig(weights="unused.pt", data_yaml=str(root / "data.yaml"))
+    cfg = TrainingConfig(weights="unused.pt", data_yaml=str(yaml_path))
 
     with pytest.raises(CodedFailure) as excinfo:
         train(cfg)

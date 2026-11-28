@@ -12,30 +12,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from polyx.pipeline.dataset import resolve_box_dataset
-from tests.conftest import split_dataset, write_image
-
-PET_BOX = "0 0.5 0.5 0.10 0.10"
-
-
-def _build_dataset(root: Path, val_images: dict[str, str | None]) -> Path:
-    """A tiny box dataset whose val fold is chosen by the test."""
-    split_dataset(
-        root,
-        {
-            "train": {"train_boxed": f"{PET_BOX}\n"},
-            "val": val_images,
-        },
-        data_yaml=True,
-    )
-    return root / "data.yaml"
+from tests.conftest import PET_BOX, box_dataset, write_image
 
 
 def test_ground_truth_contains_only_eligible_images(tmp_path: Path):
     """The evaluator's denominator is the images that have a label file."""
     dataset = resolve_box_dataset(
-        _build_dataset(
+        box_dataset(
             tmp_path / "dataset",
-            {"val_boxed": f"{PET_BOX}\n", "val_unlabelled": None},
+            val={"val_boxed": f"{PET_BOX}\n", "val_unlabelled": None},
         ),
         "val",
     )
@@ -56,9 +41,9 @@ def test_ground_truth_contains_only_eligible_images(tmp_path: Path):
 def test_an_explicitly_empty_label_stays_a_true_negative(tmp_path: Path):
     """A reviewed negative is an image with an empty label and no annotations."""
     dataset = resolve_box_dataset(
-        _build_dataset(
+        box_dataset(
             tmp_path / "dataset",
-            {"val_boxed": f"{PET_BOX}\n", "val_cleared": ""},
+            val={"val_boxed": f"{PET_BOX}\n", "val_cleared": ""},
         ),
         "val",
     )
@@ -87,9 +72,9 @@ def test_an_explicitly_empty_label_stays_a_true_negative(tmp_path: Path):
 def test_audit_refuses_an_image_without_a_label_file(tmp_path: Path):
     """The same dataset the evaluator filters is refused by the preflight audit."""
     dataset = resolve_box_dataset(
-        _build_dataset(
+        box_dataset(
             tmp_path / "dataset",
-            {"val_boxed": f"{PET_BOX}\n", "val_unlabelled": None},
+            val={"val_boxed": f"{PET_BOX}\n", "val_unlabelled": None},
         ),
         "val",
     )
@@ -106,9 +91,9 @@ def test_audit_refuses_an_image_without_a_label_file(tmp_path: Path):
 def test_a_fully_labelled_dataset_keeps_its_ground_truth(tmp_path: Path):
     """Filtering out absent labels must not change a dataset that has none."""
     dataset = resolve_box_dataset(
-        _build_dataset(
+        box_dataset(
             tmp_path / "dataset",
-            {"val_boxed": f"{PET_BOX}\n", "val_cleared": ""},
+            val={"val_boxed": f"{PET_BOX}\n", "val_cleared": ""},
         ),
         "val",
     )
@@ -198,9 +183,9 @@ def test_a_plain_folder_nested_label_is_eligible(tmp_path: Path):
 def test_an_unlabelled_image_sorting_first_does_not_shift_ground_truth_ids(tmp_path: Path):
     """The eligible image is renumbered from zero, not left at its sorted slot."""
     dataset = resolve_box_dataset(
-        _build_dataset(
+        box_dataset(
             tmp_path / "dataset",
-            {"val_a_unlabelled": None, "val_b_boxed": f"{PET_BOX}\n"},
+            val={"val_a_unlabelled": None, "val_b_boxed": f"{PET_BOX}\n"},
         ),
         "val",
     )
@@ -223,9 +208,9 @@ def test_validation_paths_are_the_eligible_cohort(tmp_path: Path):
     from polyx.pipeline.adapters import PreparedDataset, _YoloDataModule
     from polyx.pipeline.config import Protocol
 
-    yaml_path = _build_dataset(
+    yaml_path = box_dataset(
         tmp_path / "dataset",
-        {"val_boxed": f"{PET_BOX}\n", "val_cleared": ""},
+        val={"val_boxed": f"{PET_BOX}\n", "val_cleared": ""},
     )
     dataset = resolve_box_dataset(yaml_path, "val")
     prepared = PreparedDataset(

@@ -47,7 +47,7 @@ def _finding_code(code: str) -> str:
 
 #: How many file names one finding names. The count is complete; the list is a
 #: readable sample so a saved artifact does not carry a folder.
-_FINDING_SAMPLE = 10
+FINDING_SAMPLE_LIMIT = 10
 
 
 @dataclass
@@ -142,7 +142,7 @@ def _scan_box_records(records: Iterable[tuple[Path, Sequence[BBox] | None, int]]
         n_imgs += 1
         if boxes is None:
             no_label += 1
-            if len(unlabelled) < _FINDING_SAMPLE:
+            if len(unlabelled) < FINDING_SAMPLE_LIMIT:
                 unlabelled.append(img.name)
             continue
         malformed += malformed_lines
@@ -559,7 +559,7 @@ class _Auditor:
                 )
             mismatched = list(sc["label_location_mismatch"])
             if mismatched:
-                sample = mismatched[:_FINDING_SAMPLE]
+                sample = mismatched[:FINDING_SAMPLE_LIMIT]
                 audit.add(
                     LEVEL_ERROR,
                     _("Labels the training loader cannot find in %(split)s: %(count)d")

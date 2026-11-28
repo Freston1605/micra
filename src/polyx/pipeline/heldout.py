@@ -39,6 +39,7 @@ from polyx.core.data import DatasetDeclaration, SplitKind
 from polyx.core.errors import CodedFailure
 from polyx.core.i18n import N_, _
 from polyx.core.provenance import sha256_file
+from polyx.core.quality.dataset_audit import FINDING_SAMPLE_LIMIT
 from polyx.pipeline.artifacts import write_json
 from polyx.pipeline.coco import (
     coco_predictions_from_results,
@@ -191,20 +192,21 @@ def _test_fold_images(resolved: ResolvedBoxDataset, dataset: Path) -> tuple[BoxI
     this refusal happens before the cohort record or any prediction is built,
     so the cohort the result reports is the cohort it scored.
     """
-    images = resolved.splits[TEST_SPLIT]
-    unlabelled = [image.path.name for image in images if not image.is_eligible]
+    unlabelled = [image.path.name for image in resolved.unlabelled_images(TEST_SPLIT)]
     if unlabelled:
+        sample = unlabelled[:FINDING_SAMPLE_LIMIT]
         raise PipelineError(
             "heldout.unlabelled_test_image",
             N_(
                 "the test fold of %(path)s is not fully annotated: missing label "
-                "files: %(count)s (first: %(images)s). An image whose label file is "
+                "files: %(count)s (first: %(first)s). An image whose label file is "
                 "absent is refused rather than scored as background; write an empty "
                 "label file for a verified negative or remove the image"
             ),
             path=str(dataset),
             count=len(unlabelled),
-            images=", ".join(unlabelled[:10]),
+            first=", ".join(sample),
+            images=sample,
         )
     return resolved.eligible_images(TEST_SPLIT)
 

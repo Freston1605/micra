@@ -17,12 +17,9 @@ from pathlib import Path
 from polyx.gui.trainer.pages import dataset as dataset_page
 from polyx.gui.trainer.pages.dataset import DatasetPage
 from polyx.gui.trainer.state import TrainerState
-from tests.conftest import split_dataset
+from tests.conftest import PET_BOX, POLYGON, split_dataset
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-PET_BOX = "0 0.5 0.5 0.10 0.10"
-POLYGON = "0 0.1 0.1 0.9 0.1 0.9 0.9 0.1 0.9"
 
 
 def make_dataset(root: Path, *, label_text: str) -> Path:
