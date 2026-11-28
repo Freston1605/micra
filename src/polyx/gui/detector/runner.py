@@ -173,6 +173,12 @@ class DetectorRunner(QThread):
         try:
             slots = state.active_models()
             params = state.params
+            # A new attempt owns the result pages from here: if it fails before
+            # publishing, the previous run's results, verdicts and record must
+            # not stay on screen. The snapshot labels what this attempt streams
+            # even when it ends without a run record.
+            state.reset_results()
+            state.record_run_models(slots)
             obs.event(
                 _log,
                 "run.config",
@@ -198,8 +204,6 @@ class DetectorRunner(QThread):
             self._load_models(slots, _log)
 
             state.results = {i: [] for i in range(len(slots))}
-            state.run_result = None
-            state.verdicts = {}
             config = self._build_config(state, slots, state.run_dir)
             result = run_detection(
                 config,

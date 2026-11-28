@@ -97,6 +97,13 @@ class _FailingModel(_FakeModel):
         return super().predict_auto(path, **kw)
 
 
+class _UnloadableModel(_FakeModel):
+    """A model whose weights cannot be loaded, before any image is touched."""
+
+    def load(self):
+        raise RuntimeError("cannot load weights")
+
+
 def _state(tmp_path: Path, images: list[Path]) -> DetectorState:
     state = DetectorState()
     slot = state.model_slots[0]
@@ -390,6 +397,30 @@ def test_two_slots_with_the_same_alias_and_path_keep_separate_results(qapp, tmp_
     assert [state.model_at(index).alias for index in (0, 1)] == ["same", "same_2"]
 
 
+def test_model_at_prefers_the_record_then_the_snapshot_then_the_slot(qapp, tmp_path):
+    """Label resolution is run record -> run snapshot -> current slot."""
+    state = DetectorState()
+    state.model_slots[0].alias = "slot"
+    state.model_snapshot = [ModelInfo(alias="snapshot")]
+    state.run_result = RunResult(
+        run_dir=tmp_path / "run",
+        models=[ModelInfo(alias="record")],
+    )
+
+    assert state.model_at(0).alias == "record"
+
+    state.run_result = None
+    assert state.model_at(0).alias == "snapshot"
+
+    state.model_snapshot = []
+    assert state.model_at(0).alias == "slot"
+
+    # A dense key with no slot still has a generated placeholder, so a partial
+    # page that outruns the tab cannot crash.
+    assert state.model_at(4).alias == "model_5"
+    assert state.model_at(4).alias_generated is True
+
+
 def test_model_at_reads_the_run_record_before_the_current_slot(qapp, tmp_path):
     """A post-run Models-tab change does not relabel the run's results."""
     path = _plate(tmp_path / "photos" / "plate.png")
@@ -413,8 +444,9 @@ def test_model_at_reads_the_run_record_before_the_current_slot(qapp, tmp_path):
     assert state.model_at(0).alias == "model_a"
     assert state.model_at(1).alias == "model_c"
 
-    # A state with no run record (a manually built page) still has a label.
+    # A state built by hand (no run record and no snapshot) still has a label.
     state.run_result = None
+    state.model_snapshot = []
     assert state.model_at(0).alias == "renamed"
     assert state.model_at(1).alias == "model_2"
 
@@ -440,6 +472,163 @@ def test_verdicts_are_keyed_by_dense_model_index(qapp, tmp_path):
     assert state.verdicts == {(1, path): "buena"}
     assert state.verdict_for(1, path) == "buena"
     assert state.verdict_for(0, path) is None
+
+
+def test_a_run_snapshots_its_active_models_in_dense_order(qapp, tmp_path):
+    """A run freezes its models as a copy, not as references to the slots."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = DetectorState()
+    state.model_slots[0].alias = "model_a"
+    state.model_slots[0].alias_generated = False
+    state.model_slots[0].path = tmp_path / "a.pt"
+    state.model_slots[0].names = {0: "PET"}
+    state.model_slots[0].sha256 = "a" * 64
+    state.model_slots[0].loaded = _FakeModel()
+    state.model_slots[2].alias = "model_c"
+    state.model_slots[2].alias_generated = False
+    state.model_slots[2].path = tmp_path / "c.pt"
+    state.model_slots[2].loaded = _FakeModel()
+    state.images = [path]
+    state.calibration.measure_plate = False
+    state.calibration.um_per_px = 2.0
+    state.params.tiling = "never"
+
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == []
+    snapshot = state.model_snapshot
+    assert [model.alias for model in snapshot] == ["model_a", "model_c"]
+    assert [model.path for model in snapshot] == [tmp_path / "a.pt", tmp_path / "c.pt"]
+    assert [model.alias_generated for model in snapshot] == [False, False]
+    assert [model.model_type for model in snapshot] == ["yolo", "yolo"]
+    assert [model.sha256 for model in snapshot] == ["a" * 64, ""]
+    assert snapshot[0].names == {0: "PET"}
+
+    # A value copy: a later Models-tab edit cannot reach the snapshot.
+    assert all(model is not slot for model in snapshot for slot in state.model_slots)
+    state.model_slots[0].alias = "renamed"
+    state.model_slots[0].names[0] = "PP"
+    assert snapshot[0].alias == "model_a"
+    assert snapshot[0].names == {0: "PET"}
+
+
+def test_a_run_failing_before_it_publishes_clears_the_previous_run(qapp, tmp_path):
+    """A rejected new attempt must not leave the last batch on the pages."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    _execute(_runner_with_folder(state, tmp_path))
+    state.set_verdict(0, path, "buena")
+    assert state.run_result is not None
+
+    state.model_slots[0].path = None  # nothing active
+    events = _execute(DetectorRunner(state, runs_root=tmp_path / "runs_second"))
+
+    assert events["failed"] == ["No hay modelos cargados."]
+    assert state.results == {}
+    assert state.run_result is None
+    assert state.model_snapshot == []
+    assert state.verdicts == {}
+    assert state.run_dir is None
+
+
+def test_a_model_load_failure_clears_the_previous_run_and_keeps_the_snapshot(qapp, tmp_path):
+    """The load happens after the attempt took ownership of the result pages."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    _execute(_runner_with_folder(state, tmp_path))
+    state.set_verdict(0, path, "buena")
+
+    state.model_slots[0].loaded = _UnloadableModel()
+    events = _execute(DetectorRunner(state, runs_root=tmp_path / "runs_second"))
+
+    assert events["failed"] == ["RuntimeError: cannot load weights"]
+    assert state.results == {}
+    assert state.run_result is None
+    assert state.verdicts == {}
+    assert [model.alias for model in state.model_snapshot] == ["model_a"]
+
+
+def test_a_completed_run_labels_from_the_record_before_the_snapshot(qapp, tmp_path):
+    """The published record resolves duplicate aliases; the snapshot keeps the raw ones."""
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = DetectorState()
+    for index in (0, 1):
+        slot = state.model_slots[index]
+        slot.alias = "same"
+        slot.alias_generated = False
+        slot.path = tmp_path / "same.pt"
+        slot.loaded = _FakeModel()
+    state.images = [path]
+    state.calibration.measure_plate = False
+    state.calibration.um_per_px = 2.0
+    state.params.tiling = "never"
+
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == []
+    assert [model.alias for model in state.model_snapshot] == ["same", "same"]
+    assert [state.model_at(index).alias for index in (0, 1)] == ["same", "same_2"]
+
+
+def test_an_aborted_partial_run_keeps_its_labels_after_the_models_tab_changes(qapp, tmp_path):
+    """An aborted run publishes a record; the labels come from it, not the slots."""
+    paths = [
+        _plate(tmp_path / "photos" / "a.png"),
+        _plate(tmp_path / "photos" / "b.png"),
+    ]
+    state = _state(tmp_path, paths)
+    runner = _runner_with_folder(state, tmp_path)
+    runner.image_done.connect(lambda _index, _result: state.request_abort())
+
+    events = _execute(runner)
+
+    assert events["aborted"] == [True]
+    assert [result.image_path.name for result in state.results[0]] == ["a.png"]
+    state.model_slots[0].alias = "renamed"
+    assert state.model_at(0).alias == "model_a"
+
+
+def test_a_failed_partial_run_keeps_its_labels_after_the_models_tab_changes(qapp, tmp_path):
+    """A failed run that published a record labels its received results from it."""
+    paths = [
+        _plate(tmp_path / "photos" / "a.png"),
+        _plate(tmp_path / "photos" / "b.png"),
+    ]
+    state = _state(tmp_path, paths)
+    state.model_slots[0].loaded = _FailingModel("b.png")
+
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == ["RuntimeError: simulated failure"]
+    assert [result.image_path.name for result in state.results[0]] == ["a.png"]
+    state.model_slots[0].alias = "renamed"
+    assert state.model_at(0).alias == "model_a"
+
+
+def test_a_streamed_result_with_no_published_record_labels_from_the_snapshot(
+    qapp, tmp_path, monkeypatch
+):
+    """A generic failure after streaming keeps the results and the run-start labels."""
+    from polyx.gui.detector import runner as runner_module
+
+    path = _plate(tmp_path / "photos" / "plate.png")
+    state = _state(tmp_path, [path])
+    streamed = ImageResult(image_path=path, model_idx=0)
+
+    def _explode(config, on_progress=None, on_result=None, should_abort=None):
+        on_result(streamed)
+        raise RuntimeError("stream lost")
+
+    monkeypatch.setattr(runner_module, "run_detection", _explode)
+    events = _execute(_runner_with_folder(state, tmp_path))
+
+    assert events["failed"] == ["RuntimeError: stream lost"]
+    assert state.run_result is None, "the engine never published a record"
+    assert state.results[0] == [streamed]
+    assert [model.alias for model in state.model_snapshot] == ["model_a"]
+
+    state.model_slots[0].alias = "renamed"
+    assert state.model_at(0).alias == "model_a"
 
 
 def test_generated_alias_names_the_folder_and_is_persisted(qapp, tmp_path):

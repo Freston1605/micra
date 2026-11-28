@@ -1066,6 +1066,7 @@ state.images: List[Path]                # Images to analyse
 state.params: RunParams                 # conf, IoU, imgsz, filters (core shape)
 state.calibration: CalibrationPolicy    # per-photo scale policy (one owner)
 state.run_result: RunResult | None      # Current canonical run record
+state.model_snapshot: List[ModelInfo]   # Run-start copy of the active models
 state.results: Dict[int, List[ImageResult]]  # Dense active-model index
 state.verdicts: Dict[Tuple[int, Path], str]  # Review verdicts (GUI only)
 ```
@@ -1073,9 +1074,11 @@ The engine numbers active models densely (`0..N-1`) and the GUI keeps that same
 key: `DetectorRunner` files each `ImageResult` under `result.model_idx` and
 emits the dense index with `image_done`, which the Run page uses directly as its
 preview index. Pages resolve a result's label through `DetectorState.model_at()`
-(the published `RunResult.models`, else the current slot at that index), so
-models in non-adjacent or duplicate-looking slots stay distinct and a later
-Models-tab change does not relabel a finished run.
+(the published `RunResult.models`, else the run-start `model_snapshot`, else the
+current slot at that index), so models in non-adjacent or duplicate-looking
+slots stay distinct and a later Models-tab change does not relabel a finished
+run. The snapshot is a value copy taken when the run starts, so a partial run
+that streamed results and never published a record still labels them.
 
 ### `ImageResult` (src/polyx/core/detection_run/result.py)
 Result of one image, Qt-free. The GUI re-exports it unchanged. The review
