@@ -23,7 +23,6 @@ from typing import Any
 from polyx.core.data import (
     SPLIT_NAMES,
     DatasetDeclaration,
-    SplitDeclaration,
     SplitKind,
     declares_real_domain,
 )
@@ -98,7 +97,12 @@ class ResolvedBoxDataset:
         }
 
 
-def _refuse_foreign_image_formats(split: SplitDeclaration) -> None:
+def _image_members(files: tuple[Path, ...]) -> tuple[Path, ...]:
+    """The image files of one directory walk, by the project's supported extensions."""
+    return tuple(path for path in files if path.suffix.lower() in IMAGE_EXTS)
+
+
+def _refuse_foreign_image_formats(files: tuple[Path, ...]) -> None:
     """Refuse a photo format Ultralytics reads but the headless loader does not.
 
     The declaration filters membership by the project's supported extensions, so
@@ -107,9 +111,9 @@ def _refuse_foreign_image_formats(split: SplitDeclaration) -> None:
     """
     from ultralytics.data.utils import IMG_FORMATS
 
-    for path in sorted(split.path.rglob("*")):
+    for path in files:
         suffix = path.suffix.lower()
-        if not path.is_file() or suffix[1:] not in IMG_FORMATS or suffix in IMAGE_EXTS:
+        if suffix[1:] not in IMG_FORMATS or suffix in IMAGE_EXTS:
             continue
         raise PipelineError(
             "dataset.unsupported_box_image_format",
@@ -210,8 +214,9 @@ def resolve_box_dataset(data_yaml: Path, split: str) -> ResolvedBoxDataset:
                     path=str(declared.path),
                 )
             if declared.kind is SplitKind.DIRECTORY and declared.exists:
-                _refuse_foreign_image_formats(declared)
-                for path in declared.images():
+                files = declared.files()
+                _refuse_foreign_image_formats(files)
+                for path in _image_members(files):
                     if path not in resolved:
                         native_label = Path(img2label_paths([str(path)])[0])
                         sample = _resolve_box_image(path, native_label, names)

@@ -106,9 +106,16 @@ def create_real_only_yaml(data_yaml: Path, destination_dir: Path) -> Path | None
         output,
         root=destination_dir,
         names=DatasetDeclaration.load(data_yaml).names,
-        splits={"train": img_dir, "val": img_dir},
+        splits={
+            # train is not used when validating, but Ultralytics expects the key.
+            # It points to the same subset so the large split is not dragged in.
+            "train": img_dir,
+            "val": img_dir,
+        },
+        # The subset holds only real images, so a real-domain cohort check passes.
+        is_real_domain=True,
     )
-    write_declaration(declaration, output)
+    write_declaration(declaration)
     return output
 
 

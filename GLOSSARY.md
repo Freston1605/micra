@@ -199,12 +199,11 @@ conventional file and fall back to a legacy same-directory or nested
 next to the image in a plain folder. An explicit GT folder is a flat
 override (flat read, then mirrored read, flat write). `classes.txt` lives
 at the dataset root for a split layout and in the folder itself for a
-plain one. `data.yaml` is not the codec's and the codec does not read it
-today. Class-name precedence today is explicit `class_names` →
-`classes.txt` → `STUDY_CLASSES`; the planned dataset module
-(`polyx/core/data/`, still empty) will own the YAML names and pass them in
-as `class_names`, adding the `data.yaml` step once it lands. The codec never
-parses YAML. This fallback is a **dataset-label** convention, not a run reader:
+plain one. `data.yaml` is not the codec's, and the codec never parses YAML.
+Class-name precedence today is explicit `class_names` → `classes.txt` →
+`STUDY_CLASSES`. The dataset declaration (`polyx.core.data.yolo`,
+`DatasetDeclaration`) owns the YAML names and supplies `class_names`.
+This fallback is a **dataset-label** convention, not a run reader:
 pre-canonical run folders are not opened by it (see *Canonical run folder*
 below).
 

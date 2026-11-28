@@ -151,3 +151,30 @@ def test_audit_reports_a_non_mapping_declaration_with_a_bare_code(tmp_path: Path
 
     codes = {finding.code for finding in audit.findings}
     assert "data_yaml_not_mapping" in codes
+
+
+def test_audit_resolves_names_by_id_for_sparse_class_ids(tmp_path: Path):
+    """A sparse `names` map labels class 2 correctly, not `class 2` or `LDPE` by index."""
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=["2 0.5 0.5 0.3 0.3\n"],
+        val_labels=["2 0.5 0.5 0.3 0.3\n"],
+    )
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["names"] = {0: "PET", 2: "LDPE"}
+    data["nc"] = 3
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    assert audit.per_class["val"] == {"LDPE": 1}
+    assert audit.per_class["train"] == {"LDPE": 1}
+    assert "class 2" not in audit.per_class["val"]
+
+
+def test_missing_declaration_is_one_finding_with_the_legacy_code(tmp_path: Path):
+    """The declaration owns the failure; the audit maps it once, with no re-mint."""
+    audit = audit_dataset(tmp_path / "absent" / "data.yaml")
+
+    assert [finding.code for finding in audit.findings] == ["data_yaml_missing"]
+    assert audit.findings[0].parameters["path"].endswith("data.yaml")

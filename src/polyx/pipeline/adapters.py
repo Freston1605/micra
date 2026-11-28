@@ -25,7 +25,7 @@ from typing import Any
 import numpy as np
 
 from polyx.core.data import DatasetDeclaration, SplitKind
-from polyx.core.i18n import _
+from polyx.core.i18n import N_
 from polyx.core.labels import format_polygon_line
 from polyx.core.quality.dataset_audit import DatasetAudit, audit_coco_masks
 from polyx.pipeline.coco import (
@@ -44,6 +44,7 @@ from polyx.pipeline.dataset import (
     resolve_box_dataset,
     split_coco_images,
 )
+from polyx.pipeline.errors import PipelineError
 from polyx.pipeline.evaluation import (
     PREDICTION_FLOOR,
     prediction_budget,
@@ -201,9 +202,11 @@ def _ultralytics_dataset(data_yaml: Path, cfg: Any, *, mode: str) -> Any:
     split = "train" if mode == "train" else "val"
     declared = declaration.split(split)
     if declared is None or declared.kind is not SplitKind.DIRECTORY or not declared.exists:
-        raise ValueError(
-            _("the dataset declaration has no usable '%(split)s' split: %(path)s")
-            % {"split": split, "path": data_yaml}
+        raise PipelineError(
+            "dataset.box_split_unusable",
+            N_("the dataset declaration has no usable '%(split)s' split: %(path)s"),
+            split=split,
+            path=str(data_yaml),
         )
     directory = declared.path
     val = declaration.split("val")

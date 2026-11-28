@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from polyx.core.data import SPLIT_NAMES, DatasetDeclaration, SplitKind
+from polyx.core.data import SPLIT_NAMES, DatasetDeclaration, SplitDeclaration, SplitKind
 from polyx.core.errors import CodedFailure
 from polyx.core.i18n import _
 from polyx.core.labels import BBox, find_label_file, read_boxes
@@ -32,8 +32,8 @@ LEVEL_ERROR = "error"
 #: failure keeps its code where the audit already had one; the rest are named
 #: here instead of leaking the seam's dotted prefix into saved findings.
 _FINDING_CODES = {
-    "data_yaml_missing": "data_yaml_missing",
-    "data_yaml_unreadable": "data_yaml_unreadable",
+    "dataset.data_yaml_missing": "data_yaml_missing",
+    "dataset.data_yaml_unreadable": "data_yaml_unreadable",
     "dataset.declaration_not_mapping": "data_yaml_not_mapping",
     "dataset.names_invalid": "classes_invalid",
     "dataset.split_list_unreadable": "split_list_unreadable",
@@ -41,7 +41,8 @@ _FINDING_CODES = {
 
 
 def _finding_code(code: str) -> str:
-    return _FINDING_CODES.get(code, code)
+    """Map a declaration failure to the audit's artifact code; no unknown passes."""
+    return _FINDING_CODES[code]
 
 
 @dataclass
@@ -59,6 +60,7 @@ class Finding:
 class DatasetAudit:
     findings: list[Finding] = field(default_factory=list)
     class_names: list[str] = field(default_factory=list)
+    names_by_id: dict[int, str] = field(default_factory=dict)  # class id -> name
     per_class: dict[str, dict[str, int]] = field(default_factory=dict)  # split -> {class: n}
     box_area_median: dict[str, float] = field(
         default_factory=dict
@@ -187,22 +189,17 @@ class _Auditor:
     # ── orchestration ──
     def run(self) -> DatasetAudit:
         audit = self.audit
-        if not self.yaml_path.exists():
-            audit.add(
-                LEVEL_ERROR,
-                _("data.yaml not found"),
-                str(self.yaml_path),
-                code="data_yaml_missing",
-                parameters={"path": str(self.yaml_path)},
-            )
-            return audit
-
         try:
             self.declaration = DatasetDeclaration.load(self.yaml_path)
         except CodedFailure as exc:
+            title = (
+                _("data.yaml not found")
+                if exc.code == "dataset.data_yaml_missing"
+                else _("Could not read data.yaml")
+            )
             audit.add(
                 LEVEL_ERROR,
-                _("Could not read data.yaml"),
+                title,
                 exc.display(),
                 code=_finding_code(exc.code),
                 parameters=exc.parameters,
@@ -210,6 +207,7 @@ class _Auditor:
             return audit
 
         audit.class_names = self.declaration.class_names()
+        audit.names_by_id = dict(self.declaration.names)
         declared_nc = self.declaration.declared_nc
         if declared_nc is not None and declared_nc != self.declaration.class_count:
             audit.add(
@@ -239,6 +237,9 @@ class _Auditor:
     # ── helpers ──
     def _cls_name(self, cid: int) -> str:
         audit = self.audit
+        name = audit.names_by_id.get(cid)
+        if name is not None:
+            return name
         return (
             audit.class_names[cid]
             if 0 <= cid < len(audit.class_names)
@@ -260,12 +261,7 @@ class _Auditor:
                     parameters=exc.parameters,
                 )
                 images = []
-            self._record_box_split(
-                split,
-                declared is not None,
-                declared.path if declared is not None else None,
-                _scan_split(images),
-            )
+            self._record_box_split(split, declared, _scan_split(images))
             if declared is not None and declared.kind is SplitKind.LIST:
                 self.audit.add(
                     LEVEL_WARN,
@@ -279,10 +275,11 @@ class _Auditor:
                 )
         self._finish_box_scans()
 
-    def _record_box_split(self, split: str, declared: bool, path: Path | None, scan: dict) -> None:
+    def _record_box_split(self, split: str, declared: SplitDeclaration | None, scan: dict) -> None:
         audit = self.audit
-        exists = path is not None and path.exists()
-        if not declared and split in ("train", "val"):
+        exists = declared.exists if declared is not None else False
+        path = declared.path if declared is not None else None
+        if declared is None and split in ("train", "val"):
             audit.add(
                 LEVEL_ERROR,
                 _("No %(split)s split declared") % {"split": split},
@@ -294,7 +291,7 @@ class _Auditor:
                 code="split_missing",
                 parameters={"split": split},
             )
-        elif declared and not exists:
+        elif declared is not None and not exists:
             audit.add(
                 LEVEL_ERROR if split in ("train", "val") else LEVEL_WARN,
                 _("%(split)s path does not exist") % {"split": split},
@@ -607,6 +604,21 @@ def audit_dataset(yaml_path: str | Path) -> DatasetAudit:
     return _Auditor(Path(yaml_path)).run()
 
 
+def _declared_for_audit(split: str, path: Path | None) -> SplitDeclaration | None:
+    """A minimal split fact for the audit-only path, which has no declaration."""
+    if path is None:
+        return None
+    return SplitDeclaration(
+        name=split,
+        kind=SplitKind.DIRECTORY,
+        path=path,
+        exists=path.exists(),
+        outside_root=False,
+        _root=path,
+        _yaml_dir=path,
+    )
+
+
 def audit_resolved_boxes(
     class_names: Sequence[str],
     split_paths: Mapping[str, Path | None],
@@ -617,7 +629,7 @@ def audit_resolved_boxes(
     auditor.audit.class_names = list(class_names)
     for split, path in split_paths.items():
         scan = _scan_box_records((image, boxes, 0) for image, boxes in records[split])
-        auditor._record_box_split(split, path is not None, path, scan)
+        auditor._record_box_split(split, _declared_for_audit(split, path), scan)
     auditor._finish_box_scans()
     return auditor.run_checks()
 

@@ -21,19 +21,7 @@ from polyx.core.data import (
 )
 from polyx.core.errors import CodedFailure
 from polyx.pipeline.dataset import resolve_box_dataset
-from tests.conftest import split_dataset
-
-
-def write_yaml(path: Path, data: dict) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    return path
-
-
-def touch_images(directory: Path, *names: str) -> None:
-    directory.mkdir(parents=True, exist_ok=True)
-    for name in names:
-        (directory / name).touch()
+from tests.conftest import split_dataset, touch_images, write_yaml
 
 
 def load(tmp_path: Path, data: dict, *, at: str = "dataset") -> DatasetDeclaration:
@@ -253,7 +241,7 @@ def test_write_round_trips_to_the_same_facts(tmp_path: Path):
         },
     )
 
-    write_declaration(original, dataset / "data.yaml")
+    write_declaration(original)
     written = yaml.safe_load((dataset / "data.yaml").read_text(encoding="utf-8"))
     reloaded = DatasetDeclaration.load(dataset / "data.yaml")
 
@@ -295,7 +283,7 @@ def test_write_preserves_sparse_class_ids(tmp_path: Path):
         splits={"train": dataset / "images" / "train", "val": dataset / "images" / "val"},
     )
 
-    write_declaration(declaration, dataset / "data.yaml")
+    write_declaration(declaration)
     written = yaml.safe_load((dataset / "data.yaml").read_text(encoding="utf-8"))
     reloaded = DatasetDeclaration.load(dataset / "data.yaml")
 
@@ -309,7 +297,7 @@ def test_missing_yaml_raises_data_yaml_missing(tmp_path: Path):
     with pytest.raises(CodedFailure) as raised:
         DatasetDeclaration.load(tmp_path / "absent" / "data.yaml")
 
-    assert raised.value.code == "data_yaml_missing"
+    assert raised.value.code == "dataset.data_yaml_missing"
     assert raised.value.parameters["path"] == str((tmp_path / "absent" / "data.yaml").resolve())
 
 
@@ -321,7 +309,7 @@ def test_malformed_yaml_raises_data_yaml_unreadable(tmp_path: Path):
     with pytest.raises(CodedFailure) as raised:
         DatasetDeclaration.load(path)
 
-    assert raised.value.code == "data_yaml_unreadable"
+    assert raised.value.code == "dataset.data_yaml_unreadable"
 
 
 def test_non_mapping_yaml_raises_declaration_not_mapping(tmp_path: Path):

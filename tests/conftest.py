@@ -33,6 +33,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
+import yaml
 
 _RAIZ = Path(__file__).resolve().parents[1]
 _SRC = _RAIZ / "src"
@@ -64,6 +65,24 @@ def write_image(
     assert ok, f"cv2 could not encode a {width}x{height} {fmt} image"
     path.write_bytes(buf.tobytes())
     return path
+
+
+def write_yaml(path: Path, data: dict) -> Path:
+    """Write one YAML document, creating the parent folder. Shared test builder."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    return path
+
+
+def touch_images(directory: Path, *names: str) -> None:
+    """Create ``directory`` and one real image per name; membership is by suffix.
+
+    Uses ``write_image``; call it ``touch``-free. Empty-file membership tests
+    should not use this helper.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        write_image(directory / name)
 
 
 def split_dataset(

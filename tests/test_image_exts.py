@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 from polyx.core.data import yolo as dataset_declaration
-from polyx.core.paths import IMAGE_EXTS
+from polyx.core.paths import IMAGE_EXTS, find_images
 
 pytest.importorskip("PySide6")
 
@@ -112,7 +112,7 @@ def test_the_extensions_are_spelled_once_in_the_package():
     assert not respelled, f"spell the extensions through IMAGE_EXTS, not by hand: {respelled}"
 
 
-def test_the_membership_readers_share_the_canonical_tuple():
+def test_the_membership_readers_share_the_canonical_walk():
     assert viewer_state.IMAGE_EXTS is IMAGE_EXTS
     assert labeler_state.IMAGE_EXTS is IMAGE_EXTS
-    assert dataset_declaration.IMAGE_EXTS is IMAGE_EXTS
+    assert dataset_declaration.find_images is find_images

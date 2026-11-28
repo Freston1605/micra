@@ -585,8 +585,7 @@ class DatasetPage(TrainerPage):
         if test_list:
             splits["test"] = root / "test.txt"
         write_declaration(
-            DatasetDeclaration.create(yaml_out, root=root, names=names, splits=splits),
-            yaml_out,
+            DatasetDeclaration.create(yaml_out, root=root, names=names, splits=splits)
         )
         QMessageBox.information(
             self,

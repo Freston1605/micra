@@ -23,7 +23,7 @@ import yaml
 
 from polyx.core.errors import CodedFailure
 from polyx.core.i18n import N_
-from polyx.core.paths import IMAGE_EXTS
+from polyx.core.paths import find_images
 
 #: The split keys a YOLO declaration may carry. A split that is not declared is
 #: absent, not empty: ``DatasetDeclaration.split`` returns ``None`` for it.
@@ -62,22 +62,28 @@ class SplitDeclaration:
         """The split's images, in stable order.
 
         A directory is walked recursively, filtered by the project's supported
-        image extensions and sorted. A list keeps its authored order. Both drop
-        repeated paths, keeping the first occurrence. An absent path, a split
-        that is not declared, or a non-list file has no images.
+        image extensions and sorted, through the shared `find_images`. A list
+        keeps its authored order. Both drop repeated paths, keeping the first
+        occurrence. An absent path, a split that is not declared, or a non-list
+        file has no images.
         """
         if self.kind is SplitKind.DIRECTORY:
             if not self.exists:
                 return ()
-            found = (
-                path
-                for path in self.path.rglob("*")
-                if path.is_file() and path.suffix.lower() in IMAGE_EXTS
-            )
-            return tuple(dict.fromkeys(sorted(found)))
+            return tuple(dict.fromkeys(find_images(self.path)))
         if self.kind is SplitKind.LIST:
             return self._list_images()
         return ()
+
+    def files(self) -> tuple[Path, ...]:
+        """Every regular file under a directory split, sorted; one walk.
+
+        Empty for a list split or a missing path. Used to check what is present
+        without re-walking, e.g. to refuse an image format membership filters out.
+        """
+        if self.kind is not SplitKind.DIRECTORY or not self.exists:
+            return ()
+        return tuple(sorted(path for path in self.path.rglob("*") if path.is_file()))
 
     def _list_images(self) -> tuple[Path, ...]:
         if not self.exists:
@@ -136,13 +142,13 @@ class DatasetDeclaration:
             text = declaration_path.read_text(encoding="utf-8")
         except FileNotFoundError as exc:
             raise CodedFailure(
-                "data_yaml_missing",
+                "dataset.data_yaml_missing",
                 N_("data.yaml not found: %(path)s"),
                 path=str(declaration_path),
             ) from exc
         except (OSError, UnicodeDecodeError) as exc:
             raise CodedFailure(
-                "data_yaml_unreadable",
+                "dataset.data_yaml_unreadable",
                 N_("could not read data.yaml %(path)s: %(error)s"),
                 path=str(declaration_path),
                 error=str(exc),
@@ -151,7 +157,7 @@ class DatasetDeclaration:
             data = yaml.safe_load(text)
         except yaml.YAMLError as exc:
             raise CodedFailure(
-                "data_yaml_unreadable",
+                "dataset.data_yaml_unreadable",
                 N_("could not read data.yaml %(path)s: %(error)s"),
                 path=str(declaration_path),
                 error=str(exc),
@@ -174,6 +180,7 @@ class DatasetDeclaration:
         root: str | Path,
         names: Mapping[int, str] | Sequence[str],
         splits: Mapping[str, str | Path],
+        is_real_domain: bool = False,
     ) -> DatasetDeclaration:
         """Build a declaration for writing, from concrete paths.
 
@@ -194,7 +201,7 @@ class DatasetDeclaration:
             root=resolved_root,
             names=parsed_names,
             declared_nc=_class_count(parsed_names),
-            is_real_domain=False,
+            is_real_domain=is_real_domain,
             _splits=declared_splits,
         )
 
@@ -233,17 +240,19 @@ class DatasetDeclaration:
     @property
     def class_count(self) -> int:
         """The number of classes the ids span: ``max(id) + 1``, or zero."""
-        return max(self.names) + 1 if self.names else 0
+        return _class_count(self.names)
 
 
-def write_declaration(declaration: DatasetDeclaration, path: str | Path) -> None:
+def write_declaration(declaration: DatasetDeclaration, path: str | Path | None = None) -> None:
     """Write one canonical declaration: root, splits, names and ``nc``.
 
     A split inside the dataset root is written relative to it, so the file stays
     portable; one that lives outside keeps its absolute path. A dense name map
     is written as a list, and a sparse one as a mapping so its class ids survive
-    the round trip. What this writes, :meth:`DatasetDeclaration.load` reads back
-    to the same facts.
+    the round trip. `domain: real` is written when the declaration says the
+    images are real-domain. What this writes, :meth:`DatasetDeclaration.load`
+    reads back to the same facts. The destination is ``path`` or, by default,
+    ``declaration.path``; the two cannot disagree.
     """
     payload: dict[str, Any] = {"path": str(declaration.root)}
     for name in SPLIT_NAMES:
@@ -253,7 +262,9 @@ def write_declaration(declaration: DatasetDeclaration, path: str | Path) -> None
         payload[name] = _split_value(split, declaration.root)
     payload["names"] = _names_payload(declaration.names)
     payload["nc"] = declaration.class_count
-    destination = Path(path)
+    if declaration.is_real_domain:
+        payload["domain"] = "real"
+    destination = Path(path) if path is not None else declaration.path
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
         yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8"
