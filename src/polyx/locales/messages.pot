@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Poly-X VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-28 00:15-0300\n"
+"POT-Creation-Date: 2026-11-28 00:25-0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1449,7 +1449,7 @@ msgid "Filters"
 msgstr ""
 
 #: src/polyx/gui/detector/pages/errors.py:47 src/polyx/gui/detector/pages/errors.py:56
-#: src/polyx/gui/detector/pages/errors.py:103
+#: src/polyx/gui/detector/pages/errors.py:114
 msgid "All"
 msgstr ""
 
@@ -1481,14 +1481,14 @@ msgstr ""
 msgid "Conf"
 msgstr ""
 
-#: src/polyx/gui/detector/pages/errors.py:166
+#: src/polyx/gui/detector/pages/errors.py:189
 #, python-format
 msgid "%(count)d error"
 msgid_plural "%(count)d errors"
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/polyx/gui/detector/pages/errors.py:169
+#: src/polyx/gui/detector/pages/errors.py:192
 #, python-format
 msgid ""
 "%(count)d image has ground truth and error counts, but the folder does not record which box was "
