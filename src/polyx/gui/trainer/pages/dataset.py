@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QSpinBox,
 )
 
+from polyx.core.data import DatasetDeclaration, SplitDeclaration, write_declaration
+from polyx.core.errors import CodedFailure
 from polyx.core.i18n import _, lazy, ngettext
 from polyx.core.labels import find_label_file, read_boxes
 from polyx.core.paths import IMAGE_EXTS
@@ -36,61 +38,19 @@ from ..state import validate_training_config
 from ._base import TrainerPage
 
 
-def _load_yaml(path: Path) -> dict:
-    import yaml
-
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def _save_yaml(path: Path, d: dict):
-    import yaml
-
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(d, f, sort_keys=False, allow_unicode=True)
+def _images_or_empty(declared: SplitDeclaration | None) -> list[Path]:
+    """The split's images, or none when it is absent or its list is unreadable."""
+    if declared is None:
+        return []
+    try:
+        return list(declared.images())
+    except CodedFailure:
+        return []
 
 
-def _resolve_split_path(yaml_dir: Path, data: dict, split_value) -> Path | None:
-    """Resolves the path of a split applying Ultralytics' logic.
-
-    YOLO convention:
-        path: ../datasets/coco128     <- root (optional)
-        train: images/train2017       <- relative to 'path' if it exists, else to yaml_dir
-        val:   images/val2017
-    """
-    if not split_value:
-        return None
-    p = Path(split_value)
-    if p.is_absolute():
-        return p
-    root_value = data.get("path")
-    if root_value:
-        root = Path(root_value)
-        if not root.is_absolute():
-            root = (yaml_dir / root).resolve()
-        candidate = (root / p).resolve()
-        if candidate.exists():
-            return candidate
-        # If it does not exist relative to `path`, try relative to the yaml
-    return (yaml_dir / p).resolve()
-
-
-def _count_split(yaml_dir: Path, data: dict, split_value) -> int:
-    p = _resolve_split_path(yaml_dir, data, split_value)
-    if p is None:
-        return 0
-    if p.is_dir():
-        n = 0
-        for ext in IMAGE_EXTS:
-            n += sum(1 for _unused in p.rglob(f"*{ext}"))
-        return n
-    if p.is_file():
-        # list .txt file with image paths
-        try:
-            return sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip())
-        except Exception:  # noqa: BLE001
-            return 0
-    return 0
+def _split_count(declaration: DatasetDeclaration, name: str) -> int:
+    """How many images a declared split holds; an unreadable list previews as 0."""
+    return len(_images_or_empty(declaration.split(name)))
 
 
 class _PreviewTile(QLabel):
@@ -318,29 +278,24 @@ class DatasetPage(TrainerPage):
             self.lbl_yaml_status.setStyleSheet(f"color: {T.ERR_TX}; font-size: 10pt; border: none;")
             return
         try:
-            d = _load_yaml(p)
-        except Exception as e:  # noqa: BLE001
-            self.lbl_yaml_status.setText(_("✗ Error parsing YAML: %(error)s") % {"error": e})
+            declaration = DatasetDeclaration.load(p)
+        except CodedFailure as exc:
+            self.lbl_yaml_status.setText(
+                _("✗ Error parsing YAML: %(error)s") % {"error": exc.display()}
+            )
             self.lbl_yaml_status.setStyleSheet(f"color: {T.ERR_TX}; font-size: 10pt; border: none;")
             return
 
-        yaml_dir = p.parent
-        train_p = d.get("train")
-        val_p = d.get("val")
-        test_p = d.get("test")
-        n_train = _count_split(yaml_dir, d, train_p)
-        n_val = _count_split(yaml_dir, d, val_p)
-        n_test = _count_split(yaml_dir, d, test_p)
-
-        names = d.get("names", [])
-        if isinstance(names, dict):
-            names = [names[k] for k in sorted(names.keys())]
+        n_train = _split_count(declaration, "train")
+        n_val = _split_count(declaration, "val")
+        n_test = _split_count(declaration, "test")
+        names = declaration.class_names()
 
         self.state.dataset.yaml_path = p
         self.state.dataset.train_count = n_train
         self.state.dataset.val_count = n_val
         self.state.dataset.test_count = n_test
-        self.state.dataset.class_names = list(names) if names else []
+        self.state.dataset.class_names = names
         self.state.dataset_changed.emit()
 
         self.lbl_yaml_status.setText(f"✓ {p}")
@@ -362,48 +317,17 @@ class DatasetPage(TrainerPage):
         if not yaml_path:
             return
         try:
-            d = _load_yaml(yaml_path)
-        except Exception:  # noqa: BLE001
+            declaration = DatasetDeclaration.load(yaml_path)
+        except CodedFailure:
             return
-        yaml_dir = yaml_path.parent
-
-        # root to resolve relative paths inside .txt lists
-        root_value = d.get("path")
-        if root_value:
-            root = Path(root_value)
-            if not root.is_absolute():
-                root = (yaml_dir / root).resolve()
-        else:
-            root = yaml_dir
-
-        train_p = d.get("train")
-        if not train_p:
-            return
-        train_abs = _resolve_split_path(yaml_dir, d, train_p)
-        if train_abs is None or not train_abs.exists():
+        declared = declaration.split("train")
+        if declared is None or not declared.exists:
             # Show a message in the tiles
             for tile in self.tiles:
                 tile.setPixmap(QPixmap())
                 tile.setText(_("(the train folder\nwas not found)"))
             return
-
-        imgs: list[Path] = []
-        if train_abs.is_dir():
-            for ext in IMAGE_EXTS:
-                imgs.extend(list(train_abs.rglob(f"*{ext}"))[:200])
-        elif train_abs.is_file():
-            for line in train_abs.read_text(encoding="utf-8").splitlines():
-                line = line.strip()  # noqa: PLW2901
-                if not line or line.startswith("#"):
-                    continue
-                pp = Path(line)
-                if not pp.is_absolute():
-                    # Ultralytics resolves the lists relative to `path` or the yaml
-                    pp = (root / pp).resolve()
-                    if not pp.exists():
-                        pp = (yaml_dir / line).resolve()
-                if pp.exists():
-                    imgs.append(pp)
+        imgs = _images_or_empty(declared)[:200]
         if not imgs:
             for tile in self.tiles:
                 tile.setPixmap(QPixmap())
@@ -476,14 +400,13 @@ class DatasetPage(TrainerPage):
             self._validate_config_fast()
             return
         try:
-            d = _load_yaml(yaml_path)
-        except Exception as e:  # noqa: BLE001
-            self._set_check(0, False, str(e))
+            declaration = DatasetDeclaration.load(yaml_path)
+        except CodedFailure as exc:
+            self._set_check(0, False, exc.display())
             self._validate_config_fast()
             return
         self._set_check(0, True)
 
-        yaml_dir = yaml_path.parent
         n_train = self.state.dataset.train_count
         n_val = self.state.dataset.val_count
         self._set_check(
@@ -504,13 +427,9 @@ class DatasetPage(TrainerPage):
         )
 
         # Check labels for the first 50 train images
-        train_p = d.get("train")
-        train_abs = _resolve_split_path(yaml_dir, d, train_p)
-        if train_abs and train_abs.exists():
-            imgs: list[Path] = []
-            if train_abs.is_dir():
-                for ext in IMAGE_EXTS:
-                    imgs.extend(list(train_abs.rglob(f"*{ext}"))[:50])
+        declared = declaration.split("train")
+        if declared is not None and declared.exists:
+            imgs = _images_or_empty(declared)[:50]
             if imgs:
                 with_label = sum(1 for img in imgs if find_label_file(img))
                 pct = with_label / len(imgs) * 100
@@ -526,9 +445,7 @@ class DatasetPage(TrainerPage):
         else:
             self._set_check(3, None, _("Could not access the train split."))
 
-        names = d.get("names", [])
-        if isinstance(names, dict):
-            names = list(names.values())
+        names = declaration.class_names()
         has_names = bool(names)
         self._set_check(
             4,
@@ -663,18 +580,13 @@ class DatasetPage(TrainerPage):
                 if line.strip()
             ]
 
-        d = {
-            "path": str(root),
-            "train": "train.txt",
-            "val": "val.txt",
-        }
-        if test_list:
-            d["test"] = "test.txt"
-        if names:
-            d["names"] = names
-
         yaml_out = root / "data.yaml"
-        _save_yaml(yaml_out, d)
+        splits = {"train": root / "train.txt", "val": root / "val.txt"}
+        if test_list:
+            splits["test"] = root / "test.txt"
+        write_declaration(
+            DatasetDeclaration.create(yaml_out, root=root, names=names, splits=splits)
+        )
         QMessageBox.information(
             self,
             _("Auto-split"),

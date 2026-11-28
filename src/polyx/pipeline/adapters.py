@@ -24,6 +24,8 @@ from typing import Any
 
 import numpy as np
 
+from polyx.core.data import DatasetDeclaration, SplitKind
+from polyx.core.i18n import N_
 from polyx.core.labels import format_polygon_line
 from polyx.core.quality.dataset_audit import DatasetAudit, audit_coco_masks
 from polyx.pipeline.coco import (
@@ -35,17 +37,14 @@ from polyx.pipeline.config import ExecutionConfig, Family, Protocol
 from polyx.pipeline.dataset import (
     ResolvedBoxDataset,
     category_indices,
-    class_names,
     coco_store_ground_truth,
     coco_store_hashes,
     ordered_categories,
     read_coco_store,
-    read_data_yaml,
     resolve_box_dataset,
     split_coco_images,
-    split_directory,
-    split_images,
 )
+from polyx.pipeline.errors import PipelineError
 from polyx.pipeline.evaluation import (
     PREDICTION_FLOOR,
     prediction_budget,
@@ -184,6 +183,12 @@ def _ultralytics_cfg(task: str, protocol: Protocol) -> Any:
     )
 
 
+def _declared_split_images(data_yaml: Path, split: str) -> tuple[Path, ...]:
+    """The named split's images, for the fallback that has no resolved dataset."""
+    declared = DatasetDeclaration.load(data_yaml).split(split)
+    return declared.images() if declared is not None else ()
+
+
 def _ultralytics_dataset(data_yaml: Path, cfg: Any, *, mode: str) -> Any:
     """Build one of the Ultralytics datasets the family's loader consumes.
 
@@ -192,16 +197,23 @@ def _ultralytics_dataset(data_yaml: Path, cfg: Any, *, mode: str) -> Any:
     """
     from ultralytics.data import build_yolo_dataset
 
-    data = read_data_yaml(data_yaml)
-    names = class_names(data)
+    declaration = DatasetDeclaration.load(data_yaml)
+    names = declaration.names
     split = "train" if mode == "train" else "val"
-    directory = split_directory(data_yaml, data, split)
-    if directory is None or not directory.is_dir():
-        raise ValueError(f"the dataset declaration has no usable '{split}' split: {data_yaml}")
-    val_directory = split_directory(data_yaml, data, "val")
+    declared = declaration.split(split)
+    if declared is None or declared.kind is not SplitKind.DIRECTORY or not declared.exists:
+        raise PipelineError(
+            "dataset.box_split_unusable",
+            N_("the dataset declaration has no usable '%(split)s' split: %(path)s"),
+            split=split,
+            path=str(data_yaml),
+        )
+    directory = declared.path
+    val = declaration.split("val")
+    val_directory = val.path if val is not None else None
     payload: dict[str, Any] = {
         "names": names,
-        "nc": len(names),
+        "nc": declaration.class_count,
         "channels": 3,
         "train": str(directory) if split == "train" else "",
         "val": str(val_directory) if val_directory is not None else "",
@@ -1020,7 +1032,7 @@ class _YoloDataModule:
             paths = (
                 (image.path for image in boxes.splits[split])
                 if boxes is not None
-                else split_images(self.dataset.data_yaml, split)
+                else _declared_split_images(self.dataset.data_yaml, split)
             )
             self._val_dataset = _YoloValidationPaths(paths)
         return DataLoader(

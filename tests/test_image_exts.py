@@ -18,12 +18,12 @@ import cv2
 import numpy as np
 import pytest
 
-from polyx.core.paths import IMAGE_EXTS
+from polyx.core.data import yolo as dataset_declaration
+from polyx.core.paths import IMAGE_EXTS, find_images
 
 pytest.importorskip("PySide6")
 
 from polyx.gui.labeler import state as labeler_state
-from polyx.gui.trainer import dominio
 from polyx.gui.viewer import state as viewer_state
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -112,7 +112,7 @@ def test_the_extensions_are_spelled_once_in_the_package():
     assert not respelled, f"spell the extensions through IMAGE_EXTS, not by hand: {respelled}"
 
 
-def test_the_three_readers_share_the_canonical_tuple():
+def test_the_membership_readers_share_the_canonical_walk():
     assert viewer_state.IMAGE_EXTS is IMAGE_EXTS
     assert labeler_state.IMAGE_EXTS is IMAGE_EXTS
-    assert dominio.IMAGE_EXTS is IMAGE_EXTS
+    assert dataset_declaration.find_images is find_images

@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from polyx.core.quality.dataset_audit import LEVEL_WARN, audit_dataset
 from tests.conftest import split_dataset
@@ -84,3 +85,96 @@ def test_audit_does_not_count_a_polygon_line_as_a_box(tmp_path: Path):
     assert "2" in malformed[0].title, malformed[0].title
     # The explanation names the dialect; it survives the locale.
     assert "YOLO-seg" in malformed[0].detail
+
+
+def test_audit_warns_a_list_split_is_not_trainable_headlessly(tmp_path: Path):
+    """The audit reads a .txt split, and says the headless path will refuse it."""
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=[f"{PET_BOX}\n"],
+        val_labels=[f"{PP_BOX}\n"],
+    )
+    root = yaml_path.parent
+    (root / "train.txt").write_text("images/train/train_0.jpg\n", encoding="utf-8")
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["train"] = "train.txt"
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "split_list_not_trainable" in codes
+    # The list still supplies the images: the warning is about the training seam.
+    assert audit.per_class["train"] == {"PET": 1}
+
+
+def test_audit_warns_when_nc_disagrees_with_the_declared_names(tmp_path: Path):
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=[f"{PET_BOX}\n"],
+        val_labels=[f"{PP_BOX}\n"],
+    )
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["nc"] = 3
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "nc_mismatch" in codes
+
+
+def test_audit_accepts_nc_over_a_sparse_name_map(tmp_path: Path):
+    """nc counts the ids the mapping spans, so {0, 2} with nc: 3 is consistent."""
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=[f"{PET_BOX}\n"],
+        val_labels=[f"{PET_BOX}\n"],
+    )
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["names"] = {0: "PET", 2: "LDPE"}
+    data["nc"] = 3
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "nc_mismatch" not in codes
+
+
+def test_audit_reports_a_non_mapping_declaration_with_a_bare_code(tmp_path: Path):
+    path = tmp_path / "dataset" / "data.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text("- one\n- two\n", encoding="utf-8")
+
+    audit = audit_dataset(path)
+
+    codes = {finding.code for finding in audit.findings}
+    assert "data_yaml_not_mapping" in codes
+
+
+def test_audit_resolves_names_by_id_for_sparse_class_ids(tmp_path: Path):
+    """A sparse `names` map labels class 2 correctly, not `class 2` or `LDPE` by index."""
+    yaml_path = make_dataset(
+        tmp_path / "dataset",
+        train_labels=["2 0.5 0.5 0.3 0.3\n"],
+        val_labels=["2 0.5 0.5 0.3 0.3\n"],
+    )
+    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    data["names"] = {0: "PET", 2: "LDPE"}
+    data["nc"] = 3
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    audit = audit_dataset(yaml_path)
+
+    assert audit.per_class["val"] == {"LDPE": 1}
+    assert audit.per_class["train"] == {"LDPE": 1}
+    assert "class 2" not in audit.per_class["val"]
+
+
+def test_missing_declaration_is_one_finding_with_the_legacy_code(tmp_path: Path):
+    """The declaration owns the failure; the audit maps it once, with no re-mint."""
+    audit = audit_dataset(tmp_path / "absent" / "data.yaml")
+
+    assert [finding.code for finding in audit.findings] == ["data_yaml_missing"]
+    assert audit.findings[0].parameters["path"].endswith("data.yaml")

@@ -199,14 +199,36 @@ conventional file and fall back to a legacy same-directory or nested
 next to the image in a plain folder. An explicit GT folder is a flat
 override (flat read, then mirrored read, flat write). `classes.txt` lives
 at the dataset root for a split layout and in the folder itself for a
-plain one. `data.yaml` is not the codec's and the codec does not read it
-today. Class-name precedence today is explicit `class_names` →
-`classes.txt` → `STUDY_CLASSES`; the planned dataset module
-(`polyx/core/data/`, still empty) will own the YAML names and pass them in
-as `class_names`, adding the `data.yaml` step once it lands. The codec never
-parses YAML. This fallback is a **dataset-label** convention, not a run reader:
+plain one. `data.yaml` is not the codec's, and the codec never parses YAML.
+Class-name precedence today is explicit `class_names` → `classes.txt` →
+`STUDY_CLASSES`. The dataset declaration (`polyx.core.data.yolo`,
+`DatasetDeclaration`) owns the YAML names and supplies `class_names`.
+This fallback is a **dataset-label** convention, not a run reader:
 pre-canonical run folders are not opened by it (see *Canonical run folder*
 below).
+
+## Dataset declaration
+
+The resolved `data.yaml` of a YOLO box dataset: the dataset root (`path:` when
+declared, otherwise the file's folder), the ordered class names, the declared
+`nc` when present, and each split's location and membership. Owned by
+`polyx/core/data/yolo.py`; the audit, the headless resolver, the held-out
+cohort and the Trainer page read it instead of parsing the YAML themselves.
+The canonical COCO mask dataset keeps its own reader and is not a second YAML
+declaration. _Avoid_: dataset config, dataset file (they name the bytes, not
+the resolved facts).
+
+## Split declaration
+
+One split of a dataset declaration: its **kind** (`directory`, a `.txt` list,
+or a file that is neither), its resolved path, whether that path exists, and
+whether it lives outside the dataset root. Its images are walked or read on
+demand — a directory recursively, filtered by the supported image extensions
+and sorted; a list in authored order. A split the declaration does not name is
+absent, not empty; a declared path that does not exist is a folder with no
+images. The headless box resolver refuses list and file splits by name; the
+audit reads them and warns that they cannot be trained headlessly.
+_Avoid_: split config, fold path.
 
 ## Detection run
 

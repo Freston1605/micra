@@ -1211,19 +1211,19 @@ results.csv + curves
 label file or its folder layout. Every consumer imports it directly — the
 Viewer, the GT page, the Labeller, the headless engine, the dataset audit
 and the Trainer page — and neither `polyx.core` nor `polyx.core.data`
-re-exports label I/O of its own. `polyx.core.data` is reserved — it is still
-empty — for the planned dataset module; it holds no second codec.
+re-exports label I/O of its own. `polyx.core.data` owns the YAML dataset
+declaration (`polyx/core/data/yolo.py`) and holds no second codec.
 
 - **`classes.txt`** is the codec's class-name fallback: one file at the
   dataset root for a conventional split layout, one per folder for a plain
   folder. `read_labels` resolves it from the label path, so a caller never
   passes the path itself.
-- **`data.yaml`** is not the codec's, and the codec does not read it today.
-  Class-name precedence today is explicit `class_names` → `classes.txt` →
-  `STUDY_CLASSES`. The planned dataset module (`polyx.core.data`) will own
-  the dataset's YAML class names and pass them to the codec as
-  `class_names`, adding a `data.yaml` step to that precedence once it lands;
-  even then the codec will never parse YAML.
+- **`data.yaml`** is not the codec's, and the codec never parses YAML. The
+  dataset declaration (`polyx.core.data.yolo`) owns it: it resolves the root,
+  each split's location and membership, and the ordered class names, and
+  passes the names to the codec as `class_names`. The codec's own precedence
+  remains explicit `class_names` → `classes.txt` → `STUDY_CLASSES`; a caller
+  that loaded a declaration supplies the first step.
 
 ---
 

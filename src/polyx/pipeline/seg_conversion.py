@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import yaml
 
+from polyx.core.data import DatasetDeclaration, write_declaration
 from polyx.core.i18n import N_
 from polyx.core.labels import format_polygon_line, label_path_for, write_polygon_lines
 from polyx.core.provenance import sha256_file
@@ -269,16 +269,14 @@ def convert_coco_dataset(store: Path, scratch_root: Path) -> ConvertedDataset:
         labels += split_labels
         polygons += split_polygons
 
-    declaration: dict[str, Any] = {
-        "path": str(target),
-        "train": "images/train",
-        "val": "images/val",
-        "names": {index: name for index, (_id, name) in enumerate(ordered_categories(coco))},
-    }
-    if "test" in splits:
-        declaration["test"] = "images/test"
-    (partial / "data.yaml").write_text(
-        yaml.safe_dump(declaration, sort_keys=False), encoding="utf-8"
+    split_paths = {split: target / "images" / split for split in splits}
+    write_declaration(
+        DatasetDeclaration.create(
+            partial / "data.yaml",
+            root=target,
+            names={index: name for index, (_id, name) in enumerate(ordered_categories(coco))},
+            splits=split_paths,
+        )
     )
     (partial / "conversion.json").write_text(
         json.dumps(
