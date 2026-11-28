@@ -396,7 +396,10 @@ label file is not a reviewed negative — nobody has said the plate is empty —
 and the dataset audit refuses it with `images_without_labels`. An image is
 eligible when this file exists; the audit gate refuses ineligible images and
 scoring enumerates only eligible ones. The codec's `find_label_file` is the
-authority on where it may live.
+audit's authority on where it may live. A native Ultralytics trainer reads
+only the conventional mirror or a plain same-directory file; the audit
+refuses any other codec location (`label_location_not_native`) rather than
+let that trainer read the image as background.
 
 This is the YOLO box path's rule. The COCO mask path cannot apply it yet:
 until the export carries a per-image review marker, an image with no

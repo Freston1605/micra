@@ -16,7 +16,7 @@ import pytest
 import yaml
 
 from polyx.core.quality.dataset_audit import LEVEL_ERROR, LEVEL_WARN, audit_dataset
-from tests.conftest import split_dataset, write_image
+from tests.conftest import split_dataset, write_image, write_yaml
 
 PET_BOX = "0 0.5 0.5 0.10 0.10"
 PP_BOX = "1 0.5 0.5 0.30 0.30"
@@ -240,8 +240,8 @@ def test_an_empty_label_file_is_a_reviewed_negative(tmp_path: Path):
     assert not [finding for finding in audit.findings if finding.code == "images_without_labels"]
 
 
-def test_a_split_layout_same_directory_label_is_present_for_the_audit(tmp_path: Path):
-    """The audit sees a legacy split-layout label; the resolved dataset accepts it too."""
+def test_a_split_layout_same_directory_label_is_counted_and_refused(tmp_path: Path):
+    """The audit counts the boxes but refuses the native trainer's blind spot."""
     root = split_dataset(
         tmp_path / "dataset",
         {
@@ -262,3 +262,64 @@ def test_a_split_layout_same_directory_label_is_present_for_the_audit(tmp_path: 
     assert not [finding for finding in audit.findings if finding.code == "images_without_labels"]
     assert audit.per_class["train"] == {"PET": 2}
     assert audit.per_class["val"] == {"PET": 2}
+    assert [
+        finding.code for finding in audit.findings if finding.code == "label_location_not_native"
+    ]
+    assert not audit.ok
+
+
+def test_audit_refuses_a_split_label_the_native_loader_cannot_read(tmp_path: Path):
+    """A label beside a split image is read by the codec, not by Ultralytics.
+
+    The audit may count its boxes, but the shipped GUI/CLI trainer resolves
+    labels with the framework's ``images/`` -> ``labels/`` rule. Training must
+    be refused rather than silently learning that image as background.
+    """
+    root = split_dataset(
+        tmp_path / "dataset",
+        {
+            "train": {"train_0": f"{PET_BOX}\n"},
+            "val": {"val_0": f"{PET_BOX}\n"},
+        },
+        data_yaml=True,
+    )
+    for split in ("train", "val"):
+        image = root / "images" / split / f"{split}_0.png"
+        native = root / "labels" / split / f"{image.stem}.txt"
+        (image.parent / f"{image.stem}.txt").write_text(
+            native.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        native.unlink()
+
+    audit = audit_dataset(root / "data.yaml")
+
+    assert not audit.ok
+    finding = next(
+        finding for finding in audit.findings if finding.code == "label_location_not_native"
+    )
+    assert finding.level == LEVEL_ERROR
+    assert finding.parameters["split"] in {"train", "val"}
+    assert "train_0.png" in finding.parameters["images"]
+
+
+def test_audit_refuses_a_plain_folder_nested_label(tmp_path: Path):
+    """A plain folder's nested ``labels/`` file is codec-only; the loader misses it."""
+    root = tmp_path / "plain"
+    for split in ("train", "val"):
+        image = write_image(root / split / f"{split}_0.png")
+        labels = image.parent / "labels"
+        labels.mkdir()
+        (labels / f"{image.stem}.txt").write_text(f"{PET_BOX}\n", encoding="utf-8")
+    data_yaml = write_yaml(
+        root / "data.yaml",
+        {"path": ".", "train": "train", "val": "val", "names": {0: "PET"}},
+    )
+
+    audit = audit_dataset(data_yaml)
+
+    assert not audit.ok
+    finding = next(
+        finding for finding in audit.findings if finding.code == "label_location_not_native"
+    )
+    assert finding.level == LEVEL_ERROR
+    assert "train_0.png" in finding.parameters["images"]

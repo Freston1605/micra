@@ -876,19 +876,25 @@ training wrapper are untouched by this path.
   directories (a `.txt` list is refused), image formats are matched
   case-insensitively, an image resolved into two splits is refused as a fold
   leak, and an unreadable image or a label the five-column box reader cannot use
-  fails before any epoch. The label codec is the location authority: the
-  resolved dataset supplies the adapter's image list and `BoxImage.boxes`, and
-  the adapter overrides the framework's own label lookup, so conventional
-  labels, plain same-directory labels, and the codec's warned legacy
-  same-directory (split layout) or nested (plain folder) labels are all
-  eligible. The native label cache and `.npy` sidecars are neither read
+  fails before any epoch. On the resolved headless path the label codec is the
+  location authority: the resolved dataset supplies the adapter's image list and
+  `BoxImage.boxes`, and the adapter overrides the framework's own label lookup,
+  so conventional labels, plain same-directory labels, and the codec's warned
+  legacy same-directory (split layout) or nested (plain folder) labels are all
+  eligible there. The shipped GUI Trainer and `polyx-train` do not go through
+  that adapter: they hand the YAML to Ultralytics, whose loader resolves labels
+  with its own `images/` → `labels/` rule. The YAML audit therefore refuses a
+  label the loader cannot find (`label_location_not_native`), so a codec-only
+  legacy location is a preflight error on those paths instead of training as
+  background. Conventional and plain same-directory labels are read by both.
+  The native label cache and `.npy` sidecars are neither read
   nor written, so a same-size label edit is always seen. The eligibility rule
   is `BoxImage.is_eligible`: an image has a label file. The audit gate refuses
   an ineligible image; the evaluator's ground truth and validation paths
   enumerate only eligible ones, and training is stopped through the audit. An
   explicitly empty label file is a reviewed negative (zero boxes, still in the
   ground truth); an absent label file in any location the codec searches is an
-  audit error (`images_without_labels`) in every resolved split, `test`
+  audit error (`images_without_labels`) in every split the audit scans, `test`
   included. Unlabelled images stay in the resolved splits and the fingerprint
   so the audit sees them and the digest describes the bytes the execution
   would read, but only eligible images enter `ground_truth`, renumbered from

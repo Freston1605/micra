@@ -177,7 +177,15 @@ reads the codec's `BoxImage.boxes` instead of re-deriving a path. The
 conventional `images/` ↔ `labels/` mirror, a plain same-directory label, and
 the codec's two warned legacy locations — same-directory beside a split
 image, or nested `labels/` in a plain folder — all resolve to an eligible
-image. The audit, ground truth and fingerprint read that same resolved file.
+image on this path. The audit, ground truth and fingerprint read that same
+resolved file.
+
+The shipped GUI Trainer and `polyx-train` are a separate native path: they
+hand the YAML to Ultralytics, whose loader resolves labels itself. Their audit
+therefore refuses a codec-only legacy location with
+`label_location_not_native`, so those paths fail closed instead of training
+the image as background. Conventional and plain same-directory labels remain
+accepted on both paths.
 
 An image is eligible exactly when a label file exists. The audit gate refuses
 an ineligible image, and scoring enumerates only eligible ones. An explicitly
