@@ -1030,7 +1030,10 @@ class _YoloDataModule:
             boxes = self.dataset.resolved_boxes
             split = self.protocol.split
             paths = (
-                (image.path for image in boxes.splits[split])
+                # The audit gate refuses any dataset with an ineligible image;
+                # filtering here keeps prediction ids aligned with ground_truth,
+                # even if the data module is built before that refusal.
+                (image.path for image in boxes.eligible_images(split))
                 if boxes is not None
                 else _declared_split_images(self.dataset.data_yaml, split)
             )

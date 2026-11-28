@@ -387,6 +387,25 @@ The manual annotation of an image, stored as a YOLO `.txt`. An existing
 absence of annotation. Predictions are never written next to the photo —
 that would destroy the GT irrecoverably.
 
+## Reviewed negative
+
+An image a person marked reviewed with zero particles. Its YOLO `.txt`
+exists and is empty: the file is the decision, it stays in the ground truth
+as a true negative, and any detection there is a false positive. A missing
+label file is not a reviewed negative — nobody has said the plate is empty —
+and the dataset audit refuses it with `images_without_labels`. An image is
+eligible when this file exists; the audit gate refuses ineligible images and
+scoring enumerates only eligible ones. The codec's `find_label_file` is the
+authority on where it may live.
+
+This is the YOLO box path's rule. The COCO mask path cannot apply it yet:
+until the export carries a per-image review marker, an image with no
+annotations cannot be told from one nobody reviewed. See *GT (ground truth)*
+and `docs/hpc-training-pipeline.md`.
+
+_Avoid_: empty image, background image (training's reserved background class
+is a different idea). See *Census honesty*.
+
 ## Pre-annotation
 
 A run's prediction labels (`.txt` with the confidence as a sixth column)

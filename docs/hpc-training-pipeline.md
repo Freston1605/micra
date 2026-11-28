@@ -170,12 +170,32 @@ refused, because training on it and scoring it would leak the validation ground
 truth into the fit. A `val:` that points at the train folder is the common way
 this happens.
 
-The YOLO-label codec and the pinned training loader must resolve an image's
-label to the same file. The conventional `images/` ↔ `labels/` mirror and a
-plain same-directory label both qualify. A nested `labels/` folder that only
-the codec would find is refused with the path the loader expects, because the
-audit would otherwise count an annotation that training treats as background.
-An image with no label stays a background image, as before.
+The YOLO-label codec is the label-location authority for the resolved box
+path: the resolved dataset hands the adapter each image's boxes, and the
+adapter overrides the framework's own image and label lookup, so training
+reads the codec's `BoxImage.boxes` instead of re-deriving a path. The
+conventional `images/` ↔ `labels/` mirror, a plain same-directory label, and
+the codec's two warned legacy locations — same-directory beside a split
+image, or nested `labels/` in a plain folder — all resolve to an eligible
+image. The audit, ground truth and fingerprint read that same resolved file.
+
+An image is eligible exactly when a label file exists. The audit gate refuses
+an ineligible image, and scoring enumerates only eligible ones. An explicitly
+empty label file is a reviewed negative: it resolves to zero boxes, stays in
+the evaluator's ground truth as a true negative, and the audit accepts it. An
+absent label file — absent from every location `find_label_file` searches,
+legacy same-directory included — makes the audit fail with the stable code
+`images_without_labels` in every resolved split, a declared `test` fold
+included; the execution refuses a dataset whose audit is not ok. The
+evaluator's image list is built from eligible images only, so a scored
+denominator cannot contain an image nobody annotated, and held-out scoring
+refuses an unlabelled test image with `heldout.unlabelled_test_image` rather
+than dropping it or scoring it as background.
+
+This eligibility rule is the YOLO box path only. The COCO mask path keeps its
+current audit until the export carries a per-image review marker: today it
+cannot tell an image with no annotations from one nobody reviewed, so an
+absent mask annotation is not evidence that the plate was verified empty.
 
 The native label cache and the per-image `.npy` sidecars beside the dataset are
 neither read nor written: their cache key hashes paths and sizes rather than

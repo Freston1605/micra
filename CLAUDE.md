@@ -876,9 +876,25 @@ training wrapper are untouched by this path.
   directories (a `.txt` list is refused), image formats are matched
   case-insensitively, an image resolved into two splits is refused as a fold
   leak, and an unreadable image or a label the five-column box reader cannot use
-  fails before any epoch. The codec and the pinned loader must agree on where
-  each label lives; the native label cache and `.npy` sidecars are neither read
-  nor written, so a same-size label edit is always seen.
+  fails before any epoch. The label codec is the location authority: the
+  resolved dataset supplies the adapter's image list and `BoxImage.boxes`, and
+  the adapter overrides the framework's own label lookup, so conventional
+  labels, plain same-directory labels, and the codec's warned legacy
+  same-directory (split layout) or nested (plain folder) labels are all
+  eligible. The native label cache and `.npy` sidecars are neither read
+  nor written, so a same-size label edit is always seen. The eligibility rule
+  is `BoxImage.is_eligible`: an image has a label file. The audit gate refuses
+  an ineligible image; the evaluator's ground truth and validation paths
+  enumerate only eligible ones, and training is stopped through the audit. An
+  explicitly empty label file is a reviewed negative (zero boxes, still in the
+  ground truth); an absent label file in any location the codec searches is an
+  audit error (`images_without_labels`) in every resolved split, `test`
+  included. Unlabelled images stay in the resolved splits and the fingerprint
+  so the audit sees them and the digest describes the bytes the execution
+  would read, but only eligible images enter `ground_truth`, renumbered from
+  zero. This rule is the YOLO box path only: the COCO mask path keeps its
+  current audit until the export carries a per-image review marker, because
+  today it cannot tell an image with no annotations from one nobody reviewed.
 - `campaign_app.py` is the multi-family multirun; `family.run_name` names the
   per-execution directory, so two detection variants can share one root. With
   `resume=true` a job with a committed checkpoint resumes, one that never
@@ -922,6 +938,14 @@ python -m polyx.pipeline.heldout --execution runs_train/benchmark/mask_rcnn \
   never tuned and no threshold is recommended. `--device` defaults to the
   execution's backend device, and `--force` replaces an earlier result in
   `--output`. Writing inside the execution directory is refused.
+- The box cohort is built from eligible images: one label file per test image.
+  A test image with no label file is refused with
+  `heldout.unlabelled_test_image`, its count and a bounded sample before the
+  cohort record or any prediction is built (resolution has already hashed the
+  inputs) — it is neither dropped from the denominator nor scored as
+  background. An explicitly empty label file is a reviewed negative and is
+  scored as a true negative. `images`, `paths`, `hashes` and `ground_truth`
+  therefore describe the same cohort.
 - The families with an inference path are Ultralytics detection and
   segmentation (`YOLO.predict` plus the shared COCO converters) and torchvision
   Mask R-CNN. A Mask R-CNN export is marked with its format, layout version and

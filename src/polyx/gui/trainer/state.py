@@ -445,8 +445,10 @@ def validate_training_config(
             _error(text_2)
         elif f.level == LEVEL_WARN:
             msgs.append(_("[warning] %(message)s") % {"message": text_2})
-    # Train without any valid labels: the model would learn only background. The
-    # audit flags it as a per-image warning; here it is blocking.
+    # An all-empty train fold (explicit reviewed negatives) passes the audit:
+    # explicit negatives are valid data. It still has no boxes, so a model
+    # trained on it would learn only background; this guard blocks that. A
+    # missing label file is already an audit error, not this check's concern.
     labels_train = sum(audit.per_class.get("train", {}).values())
     if audit.ok and labels_train == 0:
         _error(_("No valid labels in train: the model would learn only background."))

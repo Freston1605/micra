@@ -45,6 +45,11 @@ def _finding_code(code: str) -> str:
     return _FINDING_CODES[code]
 
 
+#: How many unlabelled image names one finding names. The count is complete;
+#: the list is a readable sample so a saved artifact does not carry a folder.
+_UNLABELLED_SAMPLE = 10
+
+
 @dataclass
 class Finding:
     level: str  # ok | warn | error
@@ -116,11 +121,16 @@ def _scan_box_records(records: Iterable[tuple[Path, Sequence[BBox] | None, int]]
         lambda: defaultdict(int)
     )  # class -> {img: n}
     degenerate = out_range = duplicates = empty = no_label = malformed = 0
+    #: A bounded sample of the images that carry no label file at all, so the
+    #: refusal can name files a chemist can open instead of only a count.
+    unlabelled: list[str] = []
     n_imgs = 0
     for img, boxes, malformed_lines in records:
         n_imgs += 1
         if boxes is None:
             no_label += 1
+            if len(unlabelled) < _UNLABELLED_SAMPLE:
+                unlabelled.append(img.name)
             continue
         malformed += malformed_lines
         seen = set()
@@ -148,6 +158,7 @@ def _scan_box_records(records: Iterable[tuple[Path, Sequence[BBox] | None, int]]
         duplicates=duplicates,
         empty=empty,
         no_label=no_label,
+        no_label_images=unlabelled,
         malformed=malformed,
         n_imgs=n_imgs,
     )
@@ -491,18 +502,28 @@ class _Auditor:
                     code="duplicate_boxes",
                     parameters={"split": split, "count": sc["duplicates"]},
                 )
-            if sc["no_label"]:
-                audit.add(
-                    LEVEL_WARN,
-                    _("Images with no label in %(split)s: %(count)d")
-                    % {"split": split, "count": sc["no_label"]},
-                    _(
-                        "They will be trained as background (no objects). Confirm this is "
-                        "intentional."
-                    ),
-                    code="images_without_labels",
-                    parameters={"split": split, "count": sc["no_label"]},
+        # Every scanned split is checked, a declared test fold included: a
+        # missing label file is not a reviewed negative in any of them.
+        for split, sc in self.scans.items():
+            count = int(sc.get("no_label", 0))
+            if not count:
+                continue
+            sample = list(sc.get("no_label_images", []))
+            audit.add(
+                LEVEL_ERROR,
+                _("Images with no label file in %(split)s: %(count)d")
+                % {"split": split, "count": count},
+                _(
+                    "An absent label file is not a reviewed negative: without one, the "
+                    "image would enter the ground truth as background without anyone "
+                    "having verified it holds no particles. Write an empty label file "
+                    "for a verified negative, or remove the image. Unlabelled images: "
+                    "%(images)s (%(shown)d of %(count)d)."
                 )
+                % {"images": ", ".join(sample), "shown": len(sample), "count": count},
+                code="images_without_labels",
+                parameters={"split": split, "count": count, "images": sample},
+            )
         malformed = sum(scan["malformed"] for scan in self.scans.values())
         if malformed:
             audit.add(
